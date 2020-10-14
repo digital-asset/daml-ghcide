@@ -22,7 +22,7 @@ import qualified Language.Haskell.LSP.Types.Capabilities as LSP
 import qualified Data.Text as T
 
 data IdeOptions = IdeOptions
-  { optPreprocessor :: GHC.ParsedSource -> IdePreprocessedSource
+  { optPreprocessor :: GHC.ParsedModule -> IdePreprocessedSource
     -- ^ Preprocessor to run over all parsed source trees, generating a list of warnings
     --   and a list of errors, along with a new parse tree.
   , optGhcSession :: Action (FilePath -> Action HscEnvEq)
@@ -78,7 +78,7 @@ clientSupportsProgress caps = IdeReportProgress $ Just True ==
 
 defaultIdeOptions :: Action (FilePath -> Action HscEnvEq) -> IdeOptions
 defaultIdeOptions session = IdeOptions
-    {optPreprocessor = IdePreprocessedSource [] []
+    {optPreprocessor = IdePreprocessedSource [] [] . pm_parsed_source
     ,optGhcSession = session
     ,optExtensions = ["hs", "lhs"]
     ,optPkgLocationOpts = defaultIdePkgLocationOptions
