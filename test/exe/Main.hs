@@ -13,9 +13,8 @@ import Control.Exception (catch)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (Value)
-import Data.Char (toLower)
 import Data.Foldable
-import Data.List
+import Data.List.Extra
 import Data.Rope.UTF16 (Rope)
 import qualified Data.Rope.UTF16 as Rope
 import Development.IDE.Core.PositionMapping (fromCurrent, toCurrent)
