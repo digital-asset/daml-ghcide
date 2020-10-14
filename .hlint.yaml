@@ -81,6 +81,7 @@
     - Development.IDE.GHC.Compat
     - Development.IDE.GHC.Util
     - Development.IDE.Import.FindImports
+    - Development.IDE.LSP.Outline
     - Development.IDE.Spans.Calculate
     - Development.IDE.Spans.Documentation
     - Development.IDE.Spans.Common
