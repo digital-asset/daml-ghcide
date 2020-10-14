@@ -4,7 +4,6 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE PatternSynonyms       #-}
 
 -- | A Shake implementation of the compiler service, built
 --   using the "Shaker" abstraction layer for in-memory use.
@@ -143,7 +142,7 @@ getHomeHieFile f = do
 --   unless isUpToDate $
 --       void $ use_ TypeCheck f
 
-  hf <- liftIO $ if isUpToDate then Just <$> loadHieFile hie_f else pure Nothing
+  hf <- liftIO $ whenMaybe isUpToDate (loadHieFile hie_f)
   return ([], hf)
 
 getPackageHieFile :: Module             -- ^ Package Module to load .hie file for

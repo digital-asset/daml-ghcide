@@ -389,14 +389,14 @@ diagnosticTests = testGroup "diagnostics"
           Just pathB <- pure $ uriToFilePath uriB
           uriB <- pure $
               let (drive, suffix) = splitDrive pathB
-              in filePathToUri (joinDrive (map toLower drive ) suffix)
+              in filePathToUri (joinDrive (lower drive) suffix)
           liftIO $ createDirectoryIfMissing True (takeDirectory pathB)
           liftIO $ writeFileUTF8 pathB $ T.unpack bContent
           uriA <- getDocUri "A/A.hs"
           Just pathA <- pure $ uriToFilePath uriA
           uriA <- pure $
               let (drive, suffix) = splitDrive pathA
-              in filePathToUri (joinDrive (map toLower drive ) suffix)
+              in filePathToUri (joinDrive (lower drive) suffix)
           let itemA = TextDocumentItem uriA "haskell" 0 aContent
           let a = TextDocumentIdentifier uriA
           sendNotification TextDocumentDidOpen (DidOpenTextDocumentParams itemA)
@@ -434,7 +434,7 @@ codeLensesTests = testGroup "code lenses"
 watchedFilesTests :: TestTree
 watchedFilesTests = testGroup "watched files"
   [ testSession' "workspace files" $ \sessionDir -> do
-      liftIO $ writeFile (sessionDir </> "hie.yaml") $ "cradle: {direct: {arguments: [\"-isrc\"]}}"
+      liftIO $ writeFile (sessionDir </> "hie.yaml") "cradle: {direct: {arguments: [\"-isrc\"]}}"
       _ <- openDoc' "A.hs" "haskell" "{-#LANGUAGE NoImplicitPrelude #-}\nmodule A where\nimport B"
       watchedFileRegs <- getWatchedFilesSubscriptionsUntilProgressEnd
 
@@ -448,7 +448,7 @@ watchedFilesTests = testGroup "watched files"
       liftIO $ length watchedFileRegs @?= 6
 
   , testSession' "non workspace file" $ \sessionDir -> do
-      liftIO $ writeFile (sessionDir </> "hie.yaml") $ "cradle: {direct: {arguments: [\"-i/tmp\"]}}"
+      liftIO $ writeFile (sessionDir </> "hie.yaml") "cradle: {direct: {arguments: [\"-i/tmp\"]}}"
       _ <- openDoc' "A.hs" "haskell" "{-# LANGUAGE NoImplicitPrelude#-}\nmodule A where\nimport B"
       watchedFileRegs <- getWatchedFilesSubscriptionsUntilProgressEnd
 
@@ -951,14 +951,14 @@ suggestImportTests = testGroup "suggest import actions"
       let defLine = length imps + 1
           range = Range (Position defLine 0) (Position defLine maxBound)
       actions <- getCodeActions doc range
-      case wanted of
-        False ->
-          liftIO $ [_title | CACodeAction CodeAction{_title} <- actions, _title == newImp ] @?= []
-        True -> do
+      if wanted
+        then do
           action <- liftIO $ pickActionWithTitle newImp actions
           executeCodeAction action
           contentAfterAction <- documentContents doc
           liftIO $ after @=? contentAfterAction
+        else
+          liftIO $ [_title | CACodeAction CodeAction{_title} <- actions, _title == newImp ] @?= []
 
 addExtensionTests :: TestTree
 addExtensionTests = testGroup "add language extension actions"
@@ -2308,6 +2308,6 @@ getWatchedFilesSubscriptionsUntilProgressEnd = do
       msgs <- manyTill (Just <$> message @RegisterCapabilityRequest <|> Nothing <$ anyMessage) (message @WorkDoneProgressEndNotification)
       return
             [ args
-            | Just (RequestMessage{_params = RegistrationParams (List regs)}) <- msgs
+            | Just RequestMessage{_params = RegistrationParams (List regs)} <- msgs
             , Registration _id WorkspaceDidChangeWatchedFiles args <- regs
             ]
