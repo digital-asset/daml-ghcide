@@ -370,7 +370,7 @@ getModSummaryFromBuffer fp contents dflags parsed = do
 -- parsed module (or errors) and any parse warnings. Does not run any preprocessors
 parseFileContents
        :: GhcMonad m
-       => (GHC.ParsedSource -> IdePreprocessedSource)
+       => (GHC.ParsedModule -> IdePreprocessedSource)
        -> DynFlags -- ^ flags to use
        -> FilePath  -- ^ the filename (for source locations)
        -> SB.StringBuffer -- ^ Haskell module source text (full Unicode is supported)
@@ -405,19 +405,19 @@ parseFileContents customPreprocessor dflags filename contents = do
                  throwE $ diagFromErrMsgs "parser" dflags $ snd $ getMessages pst dflags
 
                -- Ok, we got here. It's safe to continue.
-               let IdePreprocessedSource preproc_warns errs parsed = customPreprocessor rdr_module
-               unless (null errs) $ throwE $ diagFromStrings "parser" DsError errs
-               let preproc_warnings = diagFromStrings "parser" DsWarning preproc_warns
-               ms <- getModSummaryFromBuffer filename contents dflags parsed
+               ms <- getModSummaryFromBuffer filename contents dflags rdr_module
                let pm =
                      ParsedModule {
                          pm_mod_summary = ms
-                       , pm_parsed_source = parsed
+                       , pm_parsed_source = rdr_module
                        , pm_extra_src_files=[] -- src imports not allowed
                        , pm_annotations = hpm_annotations
                       }
-                   warnings = diagFromErrMsgs "parser" dflags warns
-               pure (warnings ++ preproc_warnings, pm)
+               let IdePreprocessedSource preproc_warns errs preprocessedSource = customPreprocessor pm
+               unless (null errs) $ throwE $ diagFromStrings "parser" DsError errs
+               let preproc_warnings = diagFromStrings "parser" DsWarning preproc_warns
+               let warnings = diagFromErrMsgs "parser" dflags warns
+               pure (warnings ++ preproc_warnings, pm {pm_parsed_source = preprocessedSource})
 
 loadHieFile :: FilePath -> IO GHC.HieFile
 loadHieFile f = do
