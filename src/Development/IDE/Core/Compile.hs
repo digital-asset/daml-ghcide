@@ -370,7 +370,7 @@ getModSummaryFromBuffer fp contents dflags parsed = do
 -- parsed module (or errors) and any parse warnings. Does not run any preprocessors
 parseFileContents
        :: GhcMonad m
-       => (GHC.ParsedSource -> IdePreprocessedSource)
+       => (DynFlags -> GHC.ParsedSource -> IdePreprocessedSource)
        -> DynFlags -- ^ flags to use
        -> FilePath  -- ^ the filename (for source locations)
        -> SB.StringBuffer -- ^ Haskell module source text (full Unicode is supported)
@@ -405,7 +405,7 @@ parseFileContents customPreprocessor dflags filename contents = do
                  throwE $ diagFromErrMsgs "parser" dflags $ snd $ getMessages pst dflags
 
                -- Ok, we got here. It's safe to continue.
-               let IdePreprocessedSource preproc_warns errs parsed = customPreprocessor rdr_module
+               let IdePreprocessedSource preproc_warns errs parsed = customPreprocessor dflags rdr_module
                unless (null errs) $ throwE $ diagFromStrings "parser" DsError errs
                let preproc_warnings = diagFromStrings "parser" DsWarning preproc_warns
                ms <- getModSummaryFromBuffer filename contents dflags parsed
