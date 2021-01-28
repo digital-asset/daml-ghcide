@@ -9,6 +9,7 @@ module Development.IDE.Plugin.Completions.Logic (
 ) where
 
 import Control.Applicative
+import Data.Either (fromRight)
 import Data.Char (isSpace, isUpper)
 import Data.Generics
 import Data.List.Extra as List hiding (stripPrefix)
@@ -285,7 +286,7 @@ cacheDataProducer packageState tm deps = do
                 name' <- lookupName n
                 return $ name' >>= safeTyThingType
 #endif
-        return $ CI n (showModName mn) (either (const Nothing) id ty) (T.pack $ showGhc n) Nothing docs
+        return $ CI n (showModName mn) (fromRight Nothing ty) (T.pack $ showGhc n) Nothing docs
 
   (unquals,quals) <- getCompls rdrElts
 
