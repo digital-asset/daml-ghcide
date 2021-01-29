@@ -189,7 +189,9 @@ documentSymbolForImportSummary importSymbols =
           }
 
 documentSymbolForImport :: Located (ImportDecl GhcPs) -> Maybe DocumentSymbol
-documentSymbolForImport (L l ImportDecl { ideclName, ideclQualified }) = Just
+documentSymbolForImport (L l ImportDecl { ideclName, ideclQualified, ideclImplicit })
+  | ideclImplicit = Nothing
+  | otherwise = Just
   (defDocumentSymbol l :: DocumentSymbol)
     { _name   = "import " <> pprText ideclName
     , _kind   = SkModule
