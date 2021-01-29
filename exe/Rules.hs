@@ -56,8 +56,8 @@ loadGhcSession =
     -- This rule is for caching the GHC session. E.g., even when the cabal file
     -- changed, if the resulting flags did not change, we would continue to use
     -- the existing session.
-    defineNoFile $ \(GetHscEnv opts deps) ->
-        liftIO $ createSession $ ComponentOptions opts deps
+    defineNoFile $ \(GetHscEnv opts root deps) ->
+        liftIO $ createSession $ ComponentOptions opts root deps
 
 cradleToSession :: Rules ()
 cradleToSession = define $ \LoadCradle nfp -> do
@@ -86,7 +86,7 @@ cradleToSession = define $ \LoadCradle nfp -> do
                   _                                 -> deps
     existingDeps <- filterM doesFileExist deps'
     need existingDeps
-    ([],) . pure <$> useNoFile_ (GetHscEnv opts deps)
+    ([],) . pure <$> useNoFile_ (GetHscEnv opts (componentRoot cmpOpts) deps)
 
 cradleLoadedMethod :: Text
 cradleLoadedMethod = "ghcide/cradle/loaded"
@@ -104,7 +104,7 @@ getComponentOptions cradle = do
         CradleNone      -> fail "'none' cradle is not yet supported"
 
 createSession :: ComponentOptions -> IO HscEnvEq
-createSession (ComponentOptions theOpts _) = do
+createSession (ComponentOptions theOpts _ _) = do
     libdir <- getLibdir
 
     cacheDir <- getCacheDir theOpts
