@@ -124,7 +124,7 @@ locationsAtPoint
   -> Position
   -> [SpanInfo]
   -> m [Location]
-locationsAtPoint getHieFile IdeOptions{..} pos =
+locationsAtPoint getHieFile _ pos =
     fmap (map srcSpanToLocation) . mapMaybeM (getSpan . spaninfoSource) . spansAtPoint pos
   where getSpan :: SpanSource -> m (Maybe SrcSpan)
         getSpan NoSource = pure Nothing
