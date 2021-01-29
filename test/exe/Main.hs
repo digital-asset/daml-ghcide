@@ -24,7 +24,6 @@ import Development.IDE.Spans.Common
 import Development.IDE.Test
 import Development.IDE.Test.Runfiles
 import Development.IDE.Types.Location
-import qualified Language.Haskell.LSP.Test as LSPTest
 import Language.Haskell.LSP.Test
 import Language.Haskell.LSP.Messages
 import Language.Haskell.LSP.Types
