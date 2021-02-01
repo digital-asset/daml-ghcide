@@ -138,7 +138,9 @@ documentSymbolForDecl (L l (DerivD DerivDecl { deriv_type })) =
                                               name
                                             , _kind = SkInterface
                                             }
-documentSymbolForDecl (L l (ValD FunBind{fun_id = L _ name})) = Just
+documentSymbolForDecl (L l (ValD FunBind{fun_id = L _ name}))
+  | "_choice_" `T.isPrefixOf` showRdrName name = Nothing
+  | otherwise = Just
     (defDocumentSymbol l :: DocumentSymbol)
       { _name   = showRdrName name
       , _kind   = SkFunction
@@ -191,6 +193,7 @@ documentSymbolForImportSummary importSymbols =
 documentSymbolForImport :: Located (ImportDecl GhcPs) -> Maybe DocumentSymbol
 documentSymbolForImport (L l ImportDecl { ideclName, ideclQualified, ideclImplicit })
   | ideclImplicit = Nothing
+  | isDamlInternalImport ideclName = Nothing
   | otherwise = Just
   (defDocumentSymbol l :: DocumentSymbol)
     { _name   = "import " <> pprText ideclName
@@ -204,6 +207,9 @@ documentSymbolForImport (L l ImportDecl { ideclName, ideclQualified, ideclImplic
 #if MIN_GHC_API_VERSION(8,6,0)
 documentSymbolForImport (L _ XImportDecl {}) = Nothing
 #endif
+
+isDamlInternalImport :: ModuleName -> Bool
+isDamlInternalImport ideclName = "DA.Internal" `T.isPrefixOf` pprText ideclName
 
 defDocumentSymbol :: SrcSpan -> DocumentSymbol
 defDocumentSymbol l = DocumentSymbol { .. } where
