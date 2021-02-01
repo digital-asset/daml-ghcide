@@ -117,7 +117,8 @@ documentSymbolForDecl (L l (TyClD SynDecl { tcdLName = L l' n })) = Just
                                           , _selectionRange = srcSpanToRange l'
                                           }
 documentSymbolForDecl (L l (InstD ClsInstD { cid_inst = ClsInstDecl { cid_poly_ty } }))
-  = Just (defDocumentSymbol l :: DocumentSymbol) { _name = pprText cid_poly_ty
+  | isDamlInternalClInst cid_poly_ty = Nothing
+  | otherwise = Just (defDocumentSymbol l :: DocumentSymbol) { _name = pprText cid_poly_ty
                                                  , _kind = SkInterface
                                                  }
 documentSymbolForDecl (L l (InstD DataFamInstD { dfid_inst = DataFamInstDecl HsIB { hsib_body = FamEqn { feqn_tycon, feqn_pats } } }))
@@ -138,7 +139,9 @@ documentSymbolForDecl (L l (DerivD DerivDecl { deriv_type })) =
                                               name
                                             , _kind = SkInterface
                                             }
-documentSymbolForDecl (L l (ValD FunBind{fun_id = L _ name})) = Just
+documentSymbolForDecl (L l (ValD FunBind{fun_id = L _ name}))
+  | "_choice_" `T.isPrefixOf` showRdrName name = Nothing
+  | otherwise = Just
     (defDocumentSymbol l :: DocumentSymbol)
       { _name   = showRdrName name
       , _kind   = SkFunction
@@ -220,3 +223,9 @@ showRdrName = pprText
 
 pprText :: Outputable a => a -> Text
 pprText = pack . showSDocUnsafe . ppr
+
+-- Daml specific filters.
+isDamlInternalClInst:: LHsSigType GhcPs -> Bool
+isDamlInternalClInst cid_poly_ty =
+  "DA.Internal.Record" `T.isPrefixOf` pprText cid_poly_ty ||
+  "DA.Internal.Desugar" `T.isPrefixOf` pprText cid_poly_ty
