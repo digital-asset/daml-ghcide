@@ -56,6 +56,7 @@ import           Development.IDE.GHC.Error
 import           Development.Shake                        hiding (Diagnostic)
 import Development.IDE.Core.RuleTypes
 import Development.IDE.Spans.Type
+import Development.IDE.Core.PositionMapping
 
 import qualified GHC.LanguageExtensions as LangExt
 import HscTypes
@@ -75,14 +76,14 @@ toIdeResult = either (, Nothing) (([],) . Just)
 
 -- | useE is useful to implement functions that aren’t rules but need shortcircuiting
 -- e.g. getDefinition.
-useE :: IdeRule k v => k -> NormalizedFilePath -> MaybeT Action v
-useE k = MaybeT . use k
+useE :: IdeRule k v => k -> NormalizedFilePath -> MaybeT Action (v, PositionMapping)
+useE k = MaybeT . useWithStale k
 
 useNoFileE :: IdeRule k v => k -> MaybeT Action v
-useNoFileE k = useE k emptyFilePath
+useNoFileE k = fst <$> useE k emptyFilePath
 
-usesE :: IdeRule k v => k -> [NormalizedFilePath] -> MaybeT Action [v]
-usesE k = MaybeT . fmap sequence . uses k
+usesE :: IdeRule k v => k -> [NormalizedFilePath] -> MaybeT Action [(v, PositionMapping)]
+usesE k = MaybeT . fmap sequence . mapM (useWithStale k)
 
 defineNoFile :: IdeRule k v => (k -> Action v) -> Rules ()
 defineNoFile f = define $ \k file -> do
@@ -102,15 +103,17 @@ getDependencies file = fmap transitiveModuleDeps <$> use GetDependencies file
 getAtPoint :: NormalizedFilePath -> Position -> Action (Maybe (Maybe Range, [T.Text]))
 getAtPoint file pos = fmap join $ runMaybeT $ do
   opts <- lift getIdeOptions
-  spans <- useE GetSpanInfo file
-  return $ AtPoint.atPoint opts spans pos
+  (spans, mapping) <- useE GetSpanInfo file
+  !pos' <- MaybeT (return $ fromCurrentPosition mapping pos)
+  return $ AtPoint.atPoint opts spans pos'
 
 -- | Goto Definition.
 getDefinition :: NormalizedFilePath -> Position -> Action (Maybe Location)
 getDefinition file pos = fmap join $ runMaybeT $ do
     opts <- lift getIdeOptions
-    spans <- useE GetSpanInfo file
-    lift $ AtPoint.gotoDefinition (getHieFile file) opts (spansExprs spans) pos
+    (spans, mapping) <- useE GetSpanInfo file
+    !pos' <- MaybeT (return $ fromCurrentPosition mapping pos)
+    lift $ AtPoint.gotoDefinition (getHieFile file) opts (spansExprs spans) pos'
 
 getHieFile
   :: NormalizedFilePath -- ^ file we're editing
