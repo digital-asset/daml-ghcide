@@ -202,12 +202,21 @@ demoteTypeErrorsToWarnings =
                    . (`gopt_set` Opt_DeferOutOfScopeVariables)
 
 enableTopLevelWarnings :: ParsedModule -> ParsedModule
-enableTopLevelWarnings =
+enableTopLevelWarnings pm =
   (update_pm_mod_summary . update_hspp_opts)
-  ((`wopt_set` Opt_WarnMissingPatternSynonymSignatures) .
-   (`wopt_set` Opt_WarnMissingSignatures))
+  (enableFlag Opt_WarnMissingPatternSynonymSignatures .
+   enableFlag Opt_WarnMissingSignatures)
+  pm
   -- the line below would show also warnings for let bindings without signature
   -- ((`wopt_set` Opt_WarnMissingSignatures) . (`wopt_set` Opt_WarnMissingLocalSignatures)))
+  where originalFlags = ms_hspp_opts (pm_mod_summary pm)
+        -- We need to handle the case where users enable -Werror
+        -- but not -Wmissing-signatures. In that case, we turn on the
+        -- warning but strip it from fatal flags.
+        enableFlag f dflags =
+            if wopt f originalFlags
+                then dflags
+                else wopt_set (wopt_unset_fatal dflags f) f
 
 update_hspp_opts :: (DynFlags -> DynFlags) -> ModSummary -> ModSummary
 update_hspp_opts up ms = ms{ms_hspp_opts = up $ ms_hspp_opts ms}
