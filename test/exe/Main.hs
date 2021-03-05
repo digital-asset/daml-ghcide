@@ -1210,6 +1210,19 @@ addSigActionTests = let
     , "a >>>> b = a + b"        >:: "(>>>>) :: Num a => a -> a -> a"
     , "a `haha` b = a b"        >:: "haha :: (t1 -> t2) -> t1 -> t2"
     , "pattern Some a = Just a" >:: "pattern Some :: a -> Maybe a"
+    , testSession "-Werror with missing signatures" $ do
+        doc <- createDoc "Sigs.hs" "haskell" $ T.unlines
+          ["{-# OPTIONS_GHC -Werror -Wmissing-signatures #-}"
+          , "module Sigs where"
+          , "f = 42"
+          ]
+        expectDiagnostics [("Sigs.hs", [(DsError, (2, 0), "Top-level binding with no type signature")])]
+        changeDoc doc [TextDocumentContentChangeEvent Nothing Nothing $ T.unlines
+          ["{-# OPTIONS_GHC -Werror #-}"
+          , "module Sigs where"
+          , "f = 42"
+          ]]
+        expectDiagnostics [("Sigs.hs", [])]
     ]
 
 addSigLensesTests :: TestTree
