@@ -1,15 +1,16 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE TypeOperators #-}
 #include "ghc-api-version.h"
 
 module Development.IDE.LSP.Outline
-  ( setHandlersOutline
+  ( moduleOutline
   )
 where
 
-import qualified Language.Haskell.LSP.Core     as LSP
-import           Language.Haskell.LSP.Messages
-import           Language.Haskell.LSP.Types
+import           Language.LSP.Server (LspM)
+import           Language.LSP.Types
+import           Control.Monad.IO.Class
 import           Data.Functor
 import           Data.Generics
 import           Data.Maybe
@@ -21,26 +22,20 @@ import           Development.IDE.Core.Rules
 import           Development.IDE.Core.Shake
 import           Development.IDE.GHC.Compat
 import           Development.IDE.GHC.Error      ( srcSpanToRange )
-import           Development.IDE.LSP.Server
 import           Development.IDE.Types.Location
 import           Outputable                     ( Outputable
                                                 , ppr
                                                 , showSDocUnsafe
                                                 )
 
-setHandlersOutline :: PartialHandlers c
-setHandlersOutline = PartialHandlers $ \WithMessage {..} x -> return x
-  { LSP.documentSymbolHandler = withResponse RspDocumentSymbols moduleOutline
-  }
-
 moduleOutline
-  :: LSP.LspFuncs c -> IdeState -> DocumentSymbolParams -> IO (Either ResponseError DSResult)
-moduleOutline _lsp ideState DocumentSymbolParams { _textDocument = TextDocumentIdentifier uri }
-  = case uriToFilePath uri of
+  :: IdeState -> DocumentSymbolParams -> LspM c (Either ResponseError (List DocumentSymbol |? List SymbolInformation))
+moduleOutline ideState DocumentSymbolParams { _textDocument = TextDocumentIdentifier uri }
+  = liftIO $ case uriToFilePath uri of
     Just (toNormalizedFilePath' -> fp) -> do
       mb_decls <- runAction ideState $ use GetParsedModule fp
       pure $ Right $ case mb_decls of
-        Nothing -> DSDocumentSymbols (List [])
+        Nothing -> InL (List [])
         Just ParsedModule { pm_parsed_source = L _ltop HsModule { hsmodName, hsmodDecls, hsmodImports } }
           -> let
                declSymbols  = mapMaybe documentSymbolForDecl hsmodDecls
@@ -60,10 +55,10 @@ moduleOutline _lsp ideState DocumentSymbolParams { _textDocument = TextDocumentI
                        }
                    ]
              in
-               DSDocumentSymbols (List allSymbols)
+               InL (List allSymbols)
 
 
-    Nothing -> pure $ Right $ DSDocumentSymbols (List [])
+    Nothing -> pure $ Right $ InL (List [])
 
 documentSymbolForDecl :: Located (HsDecl GhcPs) -> Maybe DocumentSymbol
 documentSymbolForDecl (L l (TyClD FamDecl { tcdFam = FamilyDecl { fdLName = L _ n, fdInfo, fdTyVars } }))
@@ -183,12 +178,10 @@ documentSymbolForImportSummary importSymbols =
       mergeRanges xs = Range (minimum $ map _start xs) (maximum $ map _end xs)
       importRange = mergeRanges $ map (_range :: DocumentSymbol -> Range) importSymbols
     in
-      Just (defDocumentSymbol empty :: DocumentSymbol)
+      Just (defDocumentSymbol' importRange)
           { _name = "imports"
           , _kind = SkModule
           , _children = Just (List importSymbols)
-          , _range = importRange
-          , _selectionRange = importRange
           }
 
 documentSymbolForImport :: Located (ImportDecl GhcPs) -> Maybe DocumentSymbol
@@ -209,14 +202,18 @@ documentSymbolForImport (L _ XImportDecl {}) = Nothing
 #endif
 
 defDocumentSymbol :: SrcSpan -> DocumentSymbol
-defDocumentSymbol l = DocumentSymbol { .. } where
+defDocumentSymbol l = defDocumentSymbol' (srcSpanToRange l)
+
+defDocumentSymbol' :: Range -> DocumentSymbol
+defDocumentSymbol' l = DocumentSymbol { .. } where
   _detail         = Nothing
   _deprecated     = Nothing
   _name           = ""
   _kind           = SkUnknown 0
-  _range          = srcSpanToRange l
-  _selectionRange = srcSpanToRange l
+  _range          = l
+  _selectionRange = l
   _children       = Nothing
+  _tags           = Nothing
 
 showRdrName :: RdrName -> Text
 showRdrName = pprText

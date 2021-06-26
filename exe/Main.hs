@@ -2,6 +2,7 @@
 -- SPDX-License-Identifier: Apache-2.0
 {-# OPTIONS_GHC -Wno-dodgy-imports #-} -- GHC no longer exports def in GHC 8.6 and above
 {-# LANGUAGE CPP #-} -- To get precise GHC version
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -24,7 +25,6 @@ import Development.IDE.Core.Service
 import Development.IDE.Core.Rules
 import Development.IDE.Core.Shake
 import Development.IDE.Core.RuleTypes
-import Development.IDE.LSP.Protocol
 import Development.IDE.Types.Location
 import Development.IDE.Types.Diagnostics
 import Development.IDE.Types.Options
@@ -35,9 +35,8 @@ import Development.IDE.Plugin.Completions as Completions
 import Development.IDE.Plugin.CodeAction as CodeAction
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import qualified Language.Haskell.LSP.Core as LSP
-import Language.Haskell.LSP.Messages
-import Language.Haskell.LSP.Types (LspId(IdInt))
+import qualified Language.LSP.Server as LSP
+import Language.LSP.Types
 import Data.Version
 import Development.IDE.LSP.LanguageServer
 import qualified System.Directory.Extra as IO
@@ -82,10 +81,10 @@ main = do
 
     dir <- IO.getCurrentDirectory
 
+
     let plugins = Completions.plugin <> CodeAction.plugin
-        onInitialConfiguration = const $ Right ()
-        onConfigurationChange  = const $ Right ()
-        options = def { LSP.executeCommandCommands = Just ["typesignature.add"]
+        onConfigurationChange c _  = Right c
+        options = def { LSP.executeCommandCommands = Just (commandIds plugins)
                       , LSP.completionTriggerCharacters = Just "."
                       }
 
@@ -93,17 +92,16 @@ main = do
         t <- offsetTime
         hPutStrLn stderr "Starting LSP server..."
         hPutStrLn stderr "If you are seeing this in a terminal, you probably should have run ghcide WITHOUT the --lsp option!"
-        runLanguageServer options (pluginHandler plugins) onInitialConfiguration onConfigurationChange $ \getLspId event vfs caps -> do
+        runLanguageServer options Config onConfigurationChange plugins $ \env vfs _rootPath -> do
             t <- t
             hPutStrLn stderr $ "Started LSP server in " ++ showDuration t
             let options = (defaultIdeOptions $ loadSession dir)
-                    { optReportProgress = clientSupportsProgress caps
-                    , optShakeProfiling = argsShakeProfiling
+                    { optShakeProfiling = argsShakeProfiling
                     , optTesting        = argsTesting
                     }
+                logLevel = minBound
             debouncer <- newAsyncDebouncer
-            initialise caps (cradleRules >> mainRule >> pluginRules plugins >> action kick)
-                getLspId event (logger minBound) debouncer options vfs
+            initialise (cradleRules (RealLspEnv env) >> mainRule >> pluginRules plugins >> action kick) (RealLspEnv env) (logger logLevel) debouncer options vfs
     else do
         -- GHC produces messages with UTF8 in them, so make sure the terminal doesn't error
         hSetEncoding stdout utf8
@@ -143,7 +141,8 @@ main = do
         let options =
               (defaultIdeOptions $ return $ return . grab)
                     { optShakeProfiling = argsShakeProfiling }
-        ide <- initialise def (cradleRules >> mainRule) (pure $ IdInt 0) (showEvent lock) (logger Info) noopDebouncer options vfs
+            dummyEnv = DummyLspEnv (NotificationHandler $ showEvent lock)
+        ide <- initialise (cradleRules dummyEnv >> mainRule) dummyEnv (logger Info) noopDebouncer options vfs
 
         putStrLn "\nStep 6/6: Type checking the files"
         setFilesOfInterest ide $ HashSet.fromList $ map toNormalizedFilePath' files
@@ -157,10 +156,10 @@ main = do
 
         unless (null failed) exitFailure
 
-cradleRules :: Rules ()
-cradleRules = do
+cradleRules :: ShakeLspEnv -> Rules ()
+cradleRules lspEnv = do
     loadGhcSession
-    cradleToSession
+    cradleToSession lspEnv
 
 expandFiles :: [FilePath] -> IO [FilePath]
 expandFiles = concatMapM $ \x -> do
@@ -181,11 +180,11 @@ kick = do
     void $ uses TypeCheck $ HashSet.toList files
 
 -- | Print an LSP event.
-showEvent :: Lock -> FromServerMessage -> IO ()
-showEvent _ (EventFileDiagnostics _ []) = return ()
-showEvent lock (EventFileDiagnostics (toNormalizedFilePath' -> file) diags) =
+showEvent :: Lock -> SMethod m -> MessageParams m -> IO ()
+showEvent _ STextDocumentPublishDiagnostics (PublishDiagnosticsParams _ _ (List [])) = return ()
+showEvent lock STextDocumentPublishDiagnostics (PublishDiagnosticsParams (fmap toNormalizedFilePath . uriToFilePath' -> Just file) _ (List diags)) =
     withLock lock $ T.putStrLn $ showDiagnosticsColored $ map (file,ShowDiag,) diags
-showEvent lock e = withLock lock $ print e
+showEvent lock m _ = withLock lock $ print m
 
 loadSession :: FilePath -> Action (FilePath -> Action HscEnvEq)
 loadSession dir = liftIO $ do

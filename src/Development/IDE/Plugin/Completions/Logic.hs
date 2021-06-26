@@ -34,9 +34,9 @@ import Pair
 import Coercion
 #endif
 
-import Language.Haskell.LSP.Types
-import Language.Haskell.LSP.Types.Capabilities
-import qualified Language.Haskell.LSP.VFS as VFS
+import Language.LSP.Types
+import Language.LSP.Types.Capabilities
+import qualified Language.LSP.VFS as VFS
 import Development.IDE.Plugin.Completions.Types
 import Development.IDE.Spans.Documentation
 import Development.IDE.GHC.Error
@@ -133,10 +133,25 @@ occNameToComKind ty oc
 
 mkCompl :: IdeOptions -> CompItem -> CompletionItem
 mkCompl IdeOptions{..} CI{origName,importedFrom,thingType,label,isInfix,docs} =
-  CompletionItem label kind Nothing ((colon <>) <$> typeText)
-    (Just $ CompletionDocMarkup $ MarkupContent MkMarkdown $ T.intercalate sectionSeparator docs')
-    Nothing Nothing Nothing Nothing (Just insertText) (Just Snippet)
-    Nothing Nothing Nothing Nothing Nothing
+  CompletionItem
+    { _label = label
+    , _kind = kind
+    , _tags = Nothing
+    , _detail = (colon <>) <$> typeText
+    , _documentation = Just $ CompletionDocMarkup $ MarkupContent MkMarkdown $ T.intercalate sectionSeparator docs'
+    , _deprecated = Nothing
+    , _preselect = Nothing
+    , _sortText = Nothing
+    , _filterText = Nothing
+    , _insertText = Just insertText
+    , _insertTextFormat = Just Snippet
+    , _insertTextMode = Nothing
+    , _textEdit = Nothing
+    , _additionalTextEdits = Nothing
+    , _commitCharacters = Nothing
+    , _command = Nothing
+    , _xdata = Nothing
+    }
   where kind = Just $ occNameToComKind typeText $ occName origName
         insertText = case isInfix of
             Nothing -> case getArgText <$> thingType of
@@ -189,13 +204,13 @@ mkModCompl :: T.Text -> CompletionItem
 mkModCompl label =
   CompletionItem label (Just CiModule) Nothing Nothing
     Nothing Nothing Nothing Nothing Nothing Nothing Nothing
-    Nothing Nothing Nothing Nothing Nothing
+    Nothing Nothing Nothing Nothing Nothing Nothing
 
 mkImportCompl :: T.Text -> T.Text -> CompletionItem
 mkImportCompl enteredQual label =
   CompletionItem m (Just CiModule) Nothing (Just label)
     Nothing Nothing Nothing Nothing Nothing Nothing Nothing
-    Nothing Nothing Nothing Nothing Nothing
+    Nothing Nothing Nothing Nothing Nothing Nothing
   where
     m = fromMaybe "" (T.stripPrefix enteredQual label)
 
@@ -203,13 +218,13 @@ mkExtCompl :: T.Text -> CompletionItem
 mkExtCompl label =
   CompletionItem label (Just CiKeyword) Nothing Nothing
     Nothing Nothing Nothing Nothing Nothing Nothing Nothing
-    Nothing Nothing Nothing Nothing Nothing
+    Nothing Nothing Nothing Nothing Nothing Nothing
 
 mkPragmaCompl :: T.Text -> T.Text -> CompletionItem
 mkPragmaCompl label insertText =
   CompletionItem label (Just CiKeyword) Nothing Nothing
     Nothing Nothing Nothing Nothing Nothing (Just insertText) (Just Snippet)
-    Nothing Nothing Nothing Nothing Nothing
+    Nothing Nothing Nothing Nothing Nothing Nothing
 
 cacheDataProducer :: HscEnv -> TypecheckedModule -> [ParsedModule] -> IO CachedCompletions
 cacheDataProducer packageState tm deps = do

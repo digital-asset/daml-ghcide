@@ -1,9 +1,12 @@
 -- Copyright (c) 2019 The DAML Authors. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
+{-# LANGUAGE DataKinds  #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE RankNTypes                 #-}
 
 -- | A Shake implementation of the compiler service.
 --
@@ -20,6 +23,7 @@
 --   between runs. To deserialise a Shake value, we just consult Values.
 module Development.IDE.Core.Shake(
     IdeState, shakeExtras,
+    ShakeLspEnv(..), NotificationHandler(..), sendNotification,
     ShakeExtras(..), getShakeExtras, getShakeExtrasRules,
     IdeRule, IdeResult, GetModificationTime(..),
     shakeOpen, shakeShut,
@@ -33,7 +37,6 @@ module Development.IDE.Core.Shake(
     IsIdeGlobal, addIdeGlobal, addIdeGlobalExtras, getIdeGlobalState, getIdeGlobalAction,
     garbageCollect,
     setPriority,
-    sendEvent,
     ideLogger,
     actionLogger,
     FileVersion(..), modificationTime,
@@ -41,6 +44,7 @@ module Development.IDE.Core.Shake(
     updatePositionMapping,
     deleteValue,
     OnDiskRule(..),
+    Config(..)
     ) where
 
 import           Development.Shake hiding (ShakeValue, doesFileExist)
@@ -62,19 +66,19 @@ import Data.Unique
 import Development.IDE.Core.Debouncer
 import Development.IDE.Core.PositionMapping
 import Development.IDE.Types.Logger hiding (Priority)
-import Language.Haskell.LSP.Diagnostics
+import Language.LSP.Diagnostics
 import qualified Data.SortedList as SL
 import           Development.IDE.Types.Diagnostics
 import Development.IDE.Types.Location
-import Development.IDE.Types.Options
 import           Control.Concurrent.Async
 import           Control.Concurrent.Extra
-import           Control.Exception
+import           Control.Exception hiding (bracket_)
 import           Control.DeepSeq
 import           System.Time.Extra
 import           Data.Typeable
-import qualified Language.Haskell.LSP.Messages as LSP
-import qualified Language.Haskell.LSP.Types as LSP
+import qualified Language.LSP.Server as LSP
+import qualified Language.LSP.Types as LSP
+import qualified Language.LSP.Types.Capabilities as LSP
 import           System.FilePath hiding (makeRelative)
 import qualified Development.Shake as Shake
 import           Control.Monad.Extra
@@ -82,12 +86,25 @@ import           Data.Time
 import           GHC.Generics
 import           System.IO.Unsafe
 import           Numeric.Extra
-import Language.Haskell.LSP.Types
+import           Language.LSP.Types
+import           UnliftIO.Exception (bracket_)
 
+-- Dummy config type for now, we might
+-- want to add more fields in the future.
+data Config = Config
+  {
+  }
+  deriving Show
+
+newtype NotificationHandler = NotificationHandler (forall (m :: Method 'FromServer 'Notification). SMethod m -> MessageParams m -> IO ())
+
+data ShakeLspEnv
+    = DummyLspEnv NotificationHandler
+    | RealLspEnv (LSP.LanguageContextEnv Config)
 
 -- information we stash inside the shakeExtra field
 data ShakeExtras = ShakeExtras
-    {eventer :: LSP.FromServerMessage -> IO ()
+    {lspEnv :: ShakeLspEnv
     ,debouncer :: Debouncer NormalizedUri
     ,logger :: Logger
     ,globals :: Var (HMap.HashMap TypeRep Dynamic)
@@ -291,16 +308,15 @@ seqValue v b = case v of
     Failed -> b
 
 -- | Open a 'IdeState', should be shut using 'shakeShut'.
-shakeOpen :: IO LSP.LspId
-          -> (LSP.FromServerMessage -> IO ()) -- ^ diagnostic handler
+shakeOpen :: ShakeLspEnv
           -> Logger
           -> Debouncer NormalizedUri
           -> Maybe FilePath
-          -> IdeReportProgress
           -> ShakeOptions
           -> Rules ()
           -> IO IdeState
-shakeOpen getLspId eventer logger debouncer shakeProfileDir (IdeReportProgress reportProgress) opts rules = do
+shakeOpen lspEnv logger debouncer shakeProfileDir opts rules = do
+
     inProgress <- newVar HMap.empty
     shakeExtras <- do
         globals <- newVar HMap.empty
@@ -316,54 +332,66 @@ shakeOpen getLspId eventer logger debouncer shakeProfileDir (IdeReportProgress r
                 { shakeExtra = addShakeExtra shakeExtras $ shakeExtra opts
                 -- we don't actually use the progress value, but Shake conveniently spawns/kills this thread whenever
                 -- we call into Shake, so abuse it for that purpose
-                , shakeProgress = const $ if reportProgress then lspShakeProgress getLspId eventer inProgress else pure ()
+                , shakeProgress = const $ case lspEnv of
+                       RealLspEnv lspEnv -> LSP.runLspT lspEnv $ do
+                           caps <- LSP.getClientCapabilities
+                           when (clientSupportsProgress caps)
+                                (lspShakeProgress inProgress)
+                       DummyLspEnv _ -> pure ()
                 }
             rules
     shakeAbort <- newMVar $ return ()
     shakeDb <- shakeDb
     return IdeState{..}
 
-lspShakeProgress :: Hashable a => IO LSP.LspId -> (LSP.FromServerMessage -> IO ()) -> Var (HMap.HashMap a Int) -> IO ()
-lspShakeProgress getLspId sendMsg inProgress = do
+clientSupportsProgress :: LSP.ClientCapabilities -> Bool
+clientSupportsProgress LSP.ClientCapabilities{_window = Just LSP.WindowClientCapabilities{_workDoneProgress}} =
+    _workDoneProgress == Just True
+clientSupportsProgress _ = False
+
+lspShakeProgress :: Hashable a => Var (HMap.HashMap a Int) -> LSP.LspT c IO ()
+lspShakeProgress inProgress = do
     -- first sleep a bit, so we only show progress messages if it's going to take
     -- a "noticable amount of time" (we often expect a thread kill to arrive before the sleep finishes)
-    sleep 0.1
-    lspId <- getLspId
-    u <- ProgressTextToken . T.pack . show . hashUnique <$> newUnique
-    sendMsg $ LSP.ReqWorkDoneProgressCreate $ LSP.fmServerWorkDoneProgressCreateRequest
-      lspId $ LSP.WorkDoneProgressCreateParams
-      { _token = u }
-    bracket_ (start u) (stop u) (loop u Nothing)
+    liftIO $ sleep 0.1
+    u <- liftIO $ ProgressTextToken . T.pack . show . hashUnique <$> newUnique
+    b <- liftIO newBarrier
+    _ <- LSP.sendRequest
+      LSP.SWindowWorkDoneProgressCreate
+      LSP.WorkDoneProgressCreateParams { _token = u }
+      (liftIO . signalBarrier b)
+    ready <- liftIO $ waitBarrier b
+    forM_ ready $ const $ bracket_ (start u) (stop u) (loop u Nothing)
     where
-        start id = sendMsg $ LSP.NotWorkDoneProgressBegin $ LSP.fmServerWorkDoneProgressBeginNotification
+        start id = LSP.sendNotification LSP.SProgress
             LSP.ProgressParams
                 { _token = id
-                , _value = WorkDoneProgressBeginParams
+                , _value = LSP.Begin WorkDoneProgressBeginParams
                   { _title = "Processing"
                   , _cancellable = Nothing
                   , _message = Nothing
                   , _percentage = Nothing
                   }
                 }
-        stop id = sendMsg $ LSP.NotWorkDoneProgressEnd $ LSP.fmServerWorkDoneProgressEndNotification
+        stop id = LSP.sendNotification LSP.SProgress
             LSP.ProgressParams
                 { _token = id
-                , _value = WorkDoneProgressEndParams
+                , _value = LSP.End WorkDoneProgressEndParams
                   { _message = Nothing
                   }
                 }
         sample = 0.1
         loop id prev = do
-            sleep sample
-            current <- readVar inProgress
+            liftIO  $sleep sample
+            current <- liftIO $ readVar inProgress
             let done = length $ filter (== 0) $ HMap.elems current
             let todo = HMap.size current
             let next = Just $ T.pack $ show done <> "/" <> show todo
             when (next /= prev) $
-                sendMsg $ LSP.NotWorkDoneProgressReport $ LSP.fmServerWorkDoneProgressReportNotification
+                LSP.sendNotification LSP.SProgress
                     LSP.ProgressParams
                         { _token = id
-                        , _value = LSP.WorkDoneProgressReportParams
+                        , _value = LSP.Report LSP.WorkDoneProgressReportParams
                         { _cancellable = Nothing
                         , _message = next
                         , _percentage = Nothing
@@ -698,9 +726,10 @@ updateFileDiagnostics ::
   -> ShakeExtras
   -> [(ShowDiagnostic,Diagnostic)] -- ^ current results
   -> Action ()
-updateFileDiagnostics fp k ShakeExtras{diagnostics, hiddenDiagnostics, publishedDiagnostics, state, debouncer, eventer} current = liftIO $ do
+updateFileDiagnostics fp k ShakeExtras{diagnostics, hiddenDiagnostics, publishedDiagnostics, state, debouncer, lspEnv} current = liftIO $ do
     modTime <- (currentValue =<<) <$> getValues state GetModificationTime fp
     let (currentShown, currentHidden) = partition ((== ShowDiag) . fst) current
+        ver = vfsVersion =<< modTime
     mask_ $ do
         -- Mask async exceptions to ensure that updated diagnostics are always
         -- published. Otherwise, we might never publish certain diagnostics if
@@ -726,24 +755,14 @@ updateFileDiagnostics fp k ShakeExtras{diagnostics, hiddenDiagnostics, published
              mask_ $ modifyVar_ publishedDiagnostics $ \published -> do
                  let lastPublish = HMap.lookupDefault [] uri published
                  when (lastPublish /= newDiags) $
-                     eventer $ publishDiagnosticsNotification (fromNormalizedUri uri) newDiags
+                     sendNotification lspEnv LSP.STextDocumentPublishDiagnostics $
+                     LSP.PublishDiagnosticsParams (fromNormalizedUri uri) ver (List newDiags)
                  pure $! HMap.insert uri newDiags published
-
-publishDiagnosticsNotification :: Uri -> [Diagnostic] -> LSP.FromServerMessage
-publishDiagnosticsNotification uri diags =
-    LSP.NotPublishDiagnostics $
-    LSP.NotificationMessage "2.0" LSP.TextDocumentPublishDiagnostics $
-    LSP.PublishDiagnosticsParams uri (List diags)
 
 newtype Priority = Priority Double
 
 setPriority :: Priority -> Action ()
 setPriority (Priority p) = reschedule p
-
-sendEvent :: LSP.FromServerMessage -> Action ()
-sendEvent e = do
-    ShakeExtras{eventer} <- getShakeExtras
-    liftIO $ eventer e
 
 ideLogger :: IdeState -> Logger
 ideLogger IdeState{shakeExtras=ShakeExtras{logger}} = logger
@@ -836,3 +855,7 @@ updatePositionMapping IdeState{shakeExtras = ShakeExtras{positionMapping}} Versi
                 Map.insert _version idMapping $
                 Map.map (\oldMapping -> foldl' applyChange oldMapping changes) mappingForUri
         pure $! HMap.insert uri updatedMapping allMappings
+
+sendNotification :: forall (m :: Method 'FromServer 'Notification). ShakeLspEnv -> SMethod m -> MessageParams m -> IO ()
+sendNotification (RealLspEnv env) m msg = LSP.runLspT env $ LSP.sendNotification m msg
+sendNotification (DummyLspEnv (NotificationHandler send)) m msg = send m msg

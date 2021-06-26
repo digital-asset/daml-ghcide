@@ -1,14 +1,14 @@
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Development.IDE.Plugin.Completions(plugin) where
 
 import Control.Applicative
 import Data.Maybe
-import Language.Haskell.LSP.Messages
-import Language.Haskell.LSP.Types
-import qualified Language.Haskell.LSP.Core as LSP
-import qualified Language.Haskell.LSP.VFS as VFS
-import Language.Haskell.LSP.Types.Capabilities
+import qualified Language.LSP.Server as LSP
+import Language.LSP.Types
+import qualified Language.LSP.VFS as VFS
+import Language.LSP.Types.Capabilities
 import Development.Shake.Classes
 import Development.Shake
 import GHC.Generics
@@ -21,12 +21,11 @@ import Development.IDE.Core.PositionMapping
 import Development.IDE.Core.RuleTypes
 import Development.IDE.Core.Shake
 import Development.IDE.GHC.Util
-import Development.IDE.LSP.Server
 import Development.IDE.Import.DependencyInformation
 
 
 plugin :: Plugin c
-plugin = Plugin produceCompletions setHandlersCompletion
+plugin = Plugin produceCompletions [] (pluginHandler STextDocumentCompletion getCompletionsLSP) mempty
 
 produceCompletions :: Rules ()
 produceCompletions =
@@ -55,16 +54,15 @@ instance Binary   ProduceCompletions
 
 -- | Generate code actions.
 getCompletionsLSP
-    :: LSP.LspFuncs c
-    -> IdeState
+    :: IdeState
     -> CompletionParams
-    -> IO (Either ResponseError CompletionResponseResult)
-getCompletionsLSP lsp ide
+    -> LSP.LspM c (Either ResponseError (List CompletionItem |? CompletionList))
+getCompletionsLSP ide
   CompletionParams{_textDocument=TextDocumentIdentifier uri
                   ,_position=position
                   ,_context=completionContext} = do
-    contents <- LSP.getVirtualFileFunc lsp $ toNormalizedUri uri
-    fmap Right $ case (contents, uriToFilePath' uri) of
+    contents <- LSP.getVirtualFile $ toNormalizedUri uri
+    liftIO $ fmap Right $ case (contents, uriToFilePath' uri) of
       (Just cnts, Just path) -> do
         let npath = toNormalizedFilePath' path
         (ideOpts, compls) <- runAction ide $ do
@@ -78,15 +76,10 @@ getCompletionsLSP lsp ide
             pfix <- maybe (return Nothing) (flip VFS.getCompletionPrefix cnts) position'
             case (pfix, completionContext) of
               (Just (VFS.PosPrefixInfo _ "" _ _), Just CompletionContext { _triggerCharacter = Just "."})
-                -> return (Completions $ List [])
+                -> return (InL $ List [])
               (Just pfix', _) -> do
                 let fakeClientCapabilities = ClientCapabilities Nothing Nothing Nothing Nothing
-                Completions . List <$> getCompletions ideOpts cci' pm pfix' fakeClientCapabilities (WithSnippets True)
-              _ -> return (Completions $ List [])
-          _ -> return (Completions $ List [])
-      _ -> return (Completions $ List [])
-
-setHandlersCompletion :: PartialHandlers c
-setHandlersCompletion = PartialHandlers $ \WithMessage{..} x -> return x{
-    LSP.completionHandler = withResponse RspCompletion getCompletionsLSP
-    }
+                InL . List <$> getCompletions ideOpts cci' pm pfix' fakeClientCapabilities (WithSnippets True)
+              _ -> return (InL $ List [])
+          _ -> return (InL $ List [])
+      _ -> return (InL $ List [])

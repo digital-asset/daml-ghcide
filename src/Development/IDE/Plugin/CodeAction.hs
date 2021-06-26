@@ -3,13 +3,14 @@
 
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE TypeOperators #-}
 #include "ghc-api-version.h"
 
 -- | Go to the definition of a variable.
 module Development.IDE.Plugin.CodeAction(plugin) where
 
-import           Language.Haskell.LSP.Types
 import Control.Monad (join)
+import Control.Monad.IO.Class
 import Development.IDE.Plugin
 import Development.IDE.GHC.Compat
 import Development.IDE.Core.Rules
@@ -18,7 +19,6 @@ import Development.IDE.Core.Service
 import Development.IDE.Core.Shake
 import Development.IDE.GHC.Error
 import Development.IDE.GHC.Util
-import Development.IDE.LSP.Server
 import Development.IDE.Plugin.CodeAction.PositionIndexed
 import Development.IDE.Plugin.CodeAction.RuleTypes
 import Development.IDE.Plugin.CodeAction.Rules
@@ -26,11 +26,11 @@ import Development.IDE.Types.Location
 import Development.IDE.Types.Options
 import Development.Shake (Rules)
 import qualified Data.HashMap.Strict as Map
-import qualified Language.Haskell.LSP.Core as LSP
-import Language.Haskell.LSP.VFS
-import Language.Haskell.LSP.Messages
+import qualified Language.LSP.Server as LSP
+import Language.LSP.VFS
+import Language.LSP.Types
 import qualified Data.Rope.UTF16 as Rope
-import Data.Aeson.Types (toJSON, fromJSON, Value(..), Result(..))
+import Data.Aeson (toJSON, Value (Null) )
 import Control.Monad.Trans.Maybe
 import Data.Char
 import Data.Maybe
@@ -46,71 +46,61 @@ import DynFlags (xFlags, FlagSpec(..))
 import GHC.LanguageExtensions.Type (Extension)
 
 plugin :: Plugin c
-plugin = codeActionPluginWithRules rules codeAction <> Plugin mempty setHandlersCodeLens
+plugin = codeActionPluginWithRules rules codeAction <> codeLensPlugin
 
 rules :: Rules ()
 rules = rulePackageExports
 
 -- | Generate code actions.
 codeAction
-    :: LSP.LspFuncs c
-    -> IdeState
+    :: IdeState
     -> TextDocumentIdentifier
     -> Range
     -> CodeActionContext
-    -> IO (Either ResponseError [CAResult])
-codeAction lsp state (TextDocumentIdentifier uri) _range CodeActionContext{_diagnostics=List xs} = do
-    -- disable logging as its quite verbose
-    -- logInfo (ideLogger ide) $ T.pack $ "Code action req: " ++ show arg
-    contents <- LSP.getVirtualFileFunc lsp $ toNormalizedUri uri
+    -> LSP.LspM c (Either ResponseError (List (Command |? CodeAction)))
+codeAction state (TextDocumentIdentifier uri) _range CodeActionContext{_diagnostics=List xs} = do
+    contents <- LSP.getVirtualFile $ toNormalizedUri uri
     let text = Rope.toText . (_text :: VirtualFile -> Rope.Rope) <$> contents
         mbFile = toNormalizedFilePath' <$> uriToFilePath uri
-    (ideOptions, parsedModule, join -> env) <- runAction state $
+    (ideOptions, parsedModule, join -> env) <- liftIO $ runAction state $
       (,,) <$> getIdeOptions
             <*> getParsedModule `traverse` mbFile
             <*> use GhcSession `traverse` mbFile
-    pkgExports <- runAction state $ (useNoFile_ . PackageExports) `traverse` env
+    pkgExports <- liftIO $ runAction state $ (useNoFile_ . PackageExports) `traverse` env
     let dflags = hsc_dflags . hscEnv <$> env
-    pure $ Right
-        [ CACodeAction $ CodeAction title (Just CodeActionQuickFix) (Just $ List [x]) (Just edit) Nothing
+    pure $ Right $ List
+        [ InR $ CodeAction title (Just CodeActionQuickFix) (Just $ List [x]) Nothing Nothing (Just edit) Nothing Nothing
         | x <- xs, (title, tedit) <- suggestAction dflags (fromMaybe mempty pkgExports) ideOptions ( join parsedModule ) text x
-        , let edit = WorkspaceEdit (Just $ Map.singleton uri $ List tedit) Nothing
+        , let edit = WorkspaceEdit (Just $ Map.singleton uri $ List tedit) Nothing Nothing
         ]
 
 -- | Generate code lenses.
 codeLens
-    :: LSP.LspFuncs c
-    -> IdeState
+    :: IdeState
     -> CodeLensParams
-    -> IO (Either ResponseError (List CodeLens))
-codeLens _lsp ideState CodeLensParams{_textDocument=TextDocumentIdentifier uri} = do
+    -> LSP.LspM c (Either ResponseError (List CodeLens))
+codeLens ideState CodeLensParams{_textDocument=TextDocumentIdentifier uri} = liftIO $ do
     fmap (Right . List) $ case uriToFilePath' uri of
       Just (toNormalizedFilePath' -> filePath) -> do
         _ <- runAction ideState $ runMaybeT $ useE TypeCheck filePath
         diag <- getDiagnostics ideState
         hDiag <- getHiddenDiagnostics ideState
         pure
-          [ CodeLens _range (Just (Command title "typesignature.add" (Just $ List [toJSON edit]))) Nothing
+          [ CodeLens _range (Just (Command title (commandId typesignatureAddCommand) (Just $ List [toJSON edit]))) Nothing
           | (dFile, _, dDiag@Diagnostic{_range=_range}) <- diag ++ hDiag
           , dFile == filePath
           , (title, tedit) <- suggestSignature False dDiag
-          , let edit = WorkspaceEdit (Just $ Map.singleton uri $ List tedit) Nothing
+          , let edit = WorkspaceEdit (Just $ Map.singleton uri $ List tedit) Nothing Nothing
           ]
       Nothing -> pure []
 
 -- | Execute the "typesignature.add" command.
 executeAddSignatureCommand
-    :: LSP.LspFuncs c
-    -> IdeState
-    -> ExecuteCommandParams
-    -> IO (Either ResponseError Value, Maybe (ServerMethod, ApplyWorkspaceEditParams))
-executeAddSignatureCommand _lsp _ideState ExecuteCommandParams{..}
-    | _command == "typesignature.add"
-    , Just (List [edit]) <- _arguments
-    , Success wedit <- fromJSON edit
-    = return (Right Null, Just (WorkspaceApplyEdit, ApplyWorkspaceEditParams wedit))
-    | otherwise
-    = return (Right Null, Nothing)
+    :: IdeState
+    -> WorkspaceEdit
+    -> LSP.LspM c (Either e Value)
+executeAddSignatureCommand _ideState edit = do
+    Right Null <$ LSP.sendRequest SWorkspaceApplyEdit (ApplyWorkspaceEditParams Nothing edit) (const $ pure ())
 
 suggestAction
   :: Maybe DynFlags
@@ -541,10 +531,20 @@ matchRegex message regex = case unifySpaces message =~~ regex of
     Just (_ :: T.Text, _ :: T.Text, _ :: T.Text, bindings) -> Just bindings
     Nothing -> Nothing
 
-setHandlersCodeLens :: PartialHandlers c
-setHandlersCodeLens = PartialHandlers $ \WithMessage{..} x -> return x{
-    LSP.codeLensHandler = withResponse RspCodeLens codeLens,
-    LSP.executeCommandHandler = withResponseAndRequest RspExecuteCommand ReqApplyWorkspaceEdit executeAddSignatureCommand
+codeLensPlugin :: Plugin c
+codeLensPlugin = Plugin
+  { pluginRules = mempty
+  , pluginCommands =
+      [ typesignatureAddCommand
+      ]
+  , pluginHandlers = pluginHandler STextDocumentCodeLens codeLens
+  , pluginNotificationHandlers = mempty
+  }
+
+typesignatureAddCommand :: PluginCommand c
+typesignatureAddCommand = PluginCommand
+    { commandId = "typesignature.add"
+    , commandHandler = executeAddSignatureCommand
     }
 
 filterNewlines :: T.Text -> T.Text

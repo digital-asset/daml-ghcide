@@ -44,8 +44,9 @@ import Foreign.Storable
 import qualified System.Posix.Error as Posix
 #endif
 
-import Language.Haskell.LSP.Core
-import Language.Haskell.LSP.VFS
+import Language.LSP.Server hiding (getVirtualFile)
+import qualified Language.LSP.Server as LSP
+import Language.LSP.VFS
 
 -- | haskell-lsp manages the VFS internally and automatically so we cannot use
 -- the builtin VFS without spawning up an LSP server. To be able to test things
@@ -75,9 +76,9 @@ makeVFSHandle = do
                     Just content -> Map.insert uri (VirtualFile nextVersion 0 (Rope.fromText content)) vfs
         }
 
-makeLSPVFSHandle :: LspFuncs c -> VFSHandle
-makeLSPVFSHandle lspFuncs = VFSHandle
-    { getVirtualFile = getVirtualFileFunc lspFuncs
+makeLSPVFSHandle :: LanguageContextEnv c -> VFSHandle
+makeLSPVFSHandle lspEnv = VFSHandle
+    { getVirtualFile = runLspT lspEnv . LSP.getVirtualFile
     , setVirtualFileContents = Nothing
    }
 

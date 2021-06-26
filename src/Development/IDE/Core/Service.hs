@@ -30,9 +30,7 @@ import           Development.IDE.Core.OfInterest
 import Development.IDE.Types.Logger
 import           Development.Shake
 import Data.Either.Extra
-import qualified Language.Haskell.LSP.Messages as LSP
-import qualified Language.Haskell.LSP.Types as LSP
-import qualified Language.Haskell.LSP.Types.Capabilities as LSP
+import qualified Language.LSP.Types as LSP
 
 import           Development.IDE.Core.Shake
 
@@ -45,23 +43,19 @@ instance IsIdeGlobal GlobalIdeOptions
 -- Exposed API
 
 -- | Initialise the Compiler Service.
-initialise :: LSP.ClientCapabilities
-           -> Rules ()
-           -> IO LSP.LspId
-           -> (LSP.FromServerMessage -> IO ())
+initialise :: Rules ()
+           -> ShakeLspEnv
            -> Logger
            -> Debouncer LSP.NormalizedUri
            -> IdeOptions
            -> VFSHandle
            -> IO IdeState
-initialise caps mainRule getLspId toDiags logger debouncer options vfs =
+initialise mainRule lspEnv logger debouncer options vfs =
     shakeOpen
-        getLspId
-        toDiags
+        lspEnv
         logger
         debouncer
         (optShakeProfiling options)
-        (optReportProgress options)
         shakeOptions
           { shakeThreads = optThreads options
           , shakeFiles   = fromMaybe "/dev/null" (optShakeFiles options)
@@ -69,7 +63,7 @@ initialise caps mainRule getLspId toDiags logger debouncer options vfs =
             addIdeGlobal $ GlobalIdeOptions options
             fileStoreRules vfs
             ofInterestRules
-            fileExistsRules getLspId caps vfs
+            fileExistsRules lspEnv vfs
             mainRule
 
 writeProfile :: IdeState -> FilePath -> IO ()

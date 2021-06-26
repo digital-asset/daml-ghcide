@@ -1,42 +1,40 @@
 -- Copyright (c) 2019 The DAML Authors. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
-
+{-# LANGUAGE DataKinds #-}
 
 -- | Display information on hover.
 module Development.IDE.LSP.HoverDefinition
-    ( setHandlersHover
-    , setHandlersDefinition
-    -- * For haskell-language-server
-    , hover
-    , gotoDefinition
-    ) where
+    (setIdeHandlers) where
 
 import           Development.IDE.Core.Rules
 import           Development.IDE.Core.Service
 import           Development.IDE.LSP.Server
+import           Development.IDE.LSP.Outline
 import           Development.IDE.Types.Location
 import           Development.IDE.Types.Logger
 import           Development.Shake
-import qualified Language.Haskell.LSP.Core       as LSP
-import           Language.Haskell.LSP.Messages
-import           Language.Haskell.LSP.Types
+import qualified Language.LSP.Server       as LSP
+import           Language.LSP.Types
 
 import qualified Data.Text as T
 
-gotoDefinition :: IdeState -> TextDocumentPositionParams -> IO (Either ResponseError LocationResponseParams)
-hover          :: IdeState -> TextDocumentPositionParams -> IO (Either ResponseError (Maybe Hover))
-gotoDefinition = request "Definition" getDefinition (MultiLoc []) SingleLoc
+gotoDefinition :: IdeState -> TextDocumentPositionParams -> LSP.LspM c (Either ResponseError (ResponseResult 'TextDocumentDefinition))
+hover          :: IdeState -> TextDocumentPositionParams -> LSP.LspM c (Either ResponseError (Maybe Hover))
+gotoDefinition = request "Definition" getDefinition (InR $ InL $ List []) (\l -> InR $ InL $ List [l])
 hover          = request "Hover"      getAtPoint     Nothing      foundHover
 
 foundHover :: (Maybe Range, [T.Text]) -> Maybe Hover
 foundHover (mbRange, contents) =
   Just $ Hover (HoverContents $ MarkupContent MkMarkdown $ T.intercalate sectionSeparator contents) mbRange
 
-setHandlersDefinition, setHandlersHover :: PartialHandlers c
-setHandlersDefinition = PartialHandlers $ \WithMessage{..} x ->
-  return x{LSP.definitionHandler = withResponse RspDefinition $ const gotoDefinition}
-setHandlersHover      = PartialHandlers $ \WithMessage{..} x ->
-  return x{LSP.hoverHandler      = withResponse RspHover      $ const hover}
+setIdeHandlers :: LSP.Handlers (ServerM c)
+setIdeHandlers = mconcat
+  [ requestHandler STextDocumentDefinition $ \ide DefinitionParams{..} ->
+      gotoDefinition ide TextDocumentPositionParams{..}
+  , requestHandler STextDocumentHover $ \ide HoverParams{..} ->
+      hover ide TextDocumentPositionParams{..}
+  , requestHandler STextDocumentDocumentSymbol moduleOutline
+  ]
 
 -- | Respond to and log a hover or go-to-definition request
 request
@@ -46,8 +44,8 @@ request
   -> (a -> b)
   -> IdeState
   -> TextDocumentPositionParams
-  -> IO (Either ResponseError b)
-request label getResults notFound found ide (TextDocumentPositionParams (TextDocumentIdentifier uri) pos _) = do
+  -> LSP.LspM c (Either ResponseError b)
+request label getResults notFound found ide (TextDocumentPositionParams (TextDocumentIdentifier uri) pos) = liftIO $ do
     mbResult <- case uriToFilePath' uri of
         Just path -> logAndRunRequest label getResults ide pos path
         Nothing   -> pure Nothing

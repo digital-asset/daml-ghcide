@@ -11,7 +11,7 @@ where
 
 import           Data.Char
 import           Data.List
-import           Language.Haskell.LSP.Types
+import           Language.LSP.Types
 
 type PositionIndexed a = [(Position, a)]
 
