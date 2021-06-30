@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 #include "ghc-api-version.h"
 -- Mostly taken from "haskell-ide-engine"
 module Development.IDE.Plugin.Completions.Logic (
@@ -200,31 +201,40 @@ getArgText typ = argText
 #endif
       | otherwise = []
 
+completionItem :: T.Text -> CompletionItemKind -> CompletionItem
+completionItem label kind = CompletionItem
+  { _label = label
+  , _kind = Just kind
+  , _tags = Nothing
+  , _detail = Nothing
+  , _documentation = Nothing
+  , _deprecated = Nothing
+  , _preselect = Nothing
+  , _sortText = Nothing
+  , _filterText = Nothing
+  , _insertText = Nothing
+  , _insertTextFormat = Nothing
+  , _insertTextMode = Nothing
+  , _textEdit = Nothing
+  , _additionalTextEdits = Nothing
+  , _commitCharacters = Nothing
+  , _command = Nothing
+  , _xdata = Nothing
+  }
+
 mkModCompl :: T.Text -> CompletionItem
-mkModCompl label =
-  CompletionItem label (Just CiModule) Nothing Nothing
-    Nothing Nothing Nothing Nothing Nothing Nothing Nothing
-    Nothing Nothing Nothing Nothing Nothing Nothing
+mkModCompl label = completionItem label CiModule
 
 mkImportCompl :: T.Text -> T.Text -> CompletionItem
-mkImportCompl enteredQual label =
-  CompletionItem m (Just CiModule) Nothing (Just label)
-    Nothing Nothing Nothing Nothing Nothing Nothing Nothing
-    Nothing Nothing Nothing Nothing Nothing Nothing
+mkImportCompl enteredQual label = (completionItem m CiModule) { _detail = Just label }
   where
     m = fromMaybe "" (T.stripPrefix enteredQual label)
 
 mkExtCompl :: T.Text -> CompletionItem
-mkExtCompl label =
-  CompletionItem label (Just CiKeyword) Nothing Nothing
-    Nothing Nothing Nothing Nothing Nothing Nothing Nothing
-    Nothing Nothing Nothing Nothing Nothing Nothing
+mkExtCompl label = completionItem label CiKeyword
 
 mkPragmaCompl :: T.Text -> T.Text -> CompletionItem
-mkPragmaCompl label insertText =
-  CompletionItem label (Just CiKeyword) Nothing Nothing
-    Nothing Nothing Nothing Nothing Nothing (Just insertText) (Just Snippet)
-    Nothing Nothing Nothing Nothing Nothing Nothing
+mkPragmaCompl label insertText = (completionItem label CiKeyword) { _insertText = Just insertText, _insertTextFormat = Just Snippet }
 
 cacheDataProducer :: HscEnv -> TypecheckedModule -> [ParsedModule] -> IO CachedCompletions
 cacheDataProducer packageState tm deps = do
