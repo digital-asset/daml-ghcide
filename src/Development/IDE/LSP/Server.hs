@@ -1,47 +1,50 @@
 -- Copyright (c) 2019 The DAML Authors. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes #-}
+
 module Development.IDE.LSP.Server
-  ( WithMessage(..)
-  , PartialHandlers(..)
+  ( ReactorMessage(..)
+  , ReactorChan
+  , ServerM
+  , requestHandler
+  , notificationHandler
   ) where
 
+import Language.LSP.Server (LspM, Handlers)
+import Language.LSP.Types
+import qualified Language.LSP.Server as LSP
+import Development.IDE.Core.Shake
+import UnliftIO.Chan
+import Control.Monad.Reader
 
-import Data.Default
+data ReactorMessage
+  = ReactorNotification (IO ())
+  | ReactorRequest SomeLspId (IO ()) (ResponseError -> IO ())
 
-import           Language.Haskell.LSP.Types
-import qualified Language.Haskell.LSP.Core as LSP
-import qualified Language.Haskell.LSP.Messages as LSP
-import Development.IDE.Core.Service
+type ReactorChan = Chan ReactorMessage
+type ServerM c = ReaderT (ReactorChan, IdeState) (LspM c)
 
-data WithMessage c = WithMessage
-    {withResponse :: forall m req resp . (Show m, Show req) =>
-        (ResponseMessage resp -> LSP.FromServerMessage) -> -- how to wrap a response
-        (LSP.LspFuncs c -> IdeState -> req -> IO (Either ResponseError resp)) -> -- actual work
-        Maybe (LSP.Handler (RequestMessage m req resp))
-    ,withNotification :: forall m req . (Show m, Show req) =>
-        Maybe (LSP.Handler (NotificationMessage m req)) -> -- old notification handler
-        (LSP.LspFuncs c -> IdeState -> req -> IO ()) -> -- actual work
-        Maybe (LSP.Handler (NotificationMessage m req))
-    ,withResponseAndRequest :: forall m rm req resp newReqParams newReqBody .
-        (Show m, Show rm, Show req, Show newReqParams, Show newReqBody) =>
-        (ResponseMessage resp -> LSP.FromServerMessage) -> -- how to wrap a response
-        (RequestMessage rm newReqParams newReqBody -> LSP.FromServerMessage) -> -- how to wrap the additional req
-        (LSP.LspFuncs c -> IdeState -> req -> IO (Either ResponseError resp, Maybe (rm, newReqParams))) -> -- actual work
-        Maybe (LSP.Handler (RequestMessage m req resp))
-    , withInitialize :: (LSP.LspFuncs c -> IdeState -> InitializeParams -> IO ())
-                     -> Maybe (LSP.Handler InitializeRequest)
-    }
+requestHandler
+  :: forall (m :: Method 'FromClient 'Request) c.
+     SMethod m
+  -> (IdeState -> MessageParams m -> LspM c (Either ResponseError (ResponseResult m)))
+  -> Handlers (ServerM c)
+requestHandler m k = LSP.requestHandler m $ \RequestMessage{_method,_id,_params} resp -> do
+  st@(chan,ide) <- ask
+  env <- LSP.getLspEnv
+  let resp' = flip runReaderT st . resp
+  writeChan chan $ ReactorRequest (SomeLspId _id) (LSP.runLspT env $ resp' =<< k ide _params) (LSP.runLspT env . resp' . Left)
 
-newtype PartialHandlers c = PartialHandlers (WithMessage c -> LSP.Handlers -> IO LSP.Handlers)
-
-instance Default (PartialHandlers c) where
-    def = PartialHandlers $ \_ x -> pure x
-
-instance Semigroup (PartialHandlers c) where
-    PartialHandlers a <> PartialHandlers b = PartialHandlers $ \w x -> a w x >>= b w
-
-instance Monoid (PartialHandlers c) where
-    mempty = def
+notificationHandler
+  :: forall (m :: Method 'FromClient 'Notification) c.
+     SMethod m
+  -> (IdeState -> MessageParams m -> LspM c ())
+  -> Handlers (ServerM c)
+notificationHandler m k = LSP.notificationHandler m $ \NotificationMessage{_params,_method}-> do
+  (chan,ide) <- ask
+  env <- LSP.getLspEnv
+  writeChan chan $ ReactorNotification (LSP.runLspT env $ k ide _params)

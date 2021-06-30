@@ -1,9 +1,9 @@
-resolver: nightly-2021-01-05
+resolver: lts-18.0
 packages:
 - .
 extra-deps:
-- haskell-lsp-0.23.0.0
-- haskell-lsp-types-0.23.0.0
-- lsp-test-0.11.0.7
+- lsp-1.2.0.0
+- lsp-types-1.2.0.0
+- lsp-test-0.14.0.0
 nix:
   packages: [zlib]

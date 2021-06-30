@@ -1,4 +1,4 @@
-cabal-version:      1.20
+cabal-version:      2.0
 build-type:         Simple
 category:           Development
 name:               ghcide
@@ -37,14 +37,16 @@ library
         containers,
         data-default,
         deepseq,
+        dependent-map,
+        dependent-sum,
         directory,
         extra,
         fuzzy,
         filepath,
         haddock-library >= 1.8,
         hashable,
-        haskell-lsp-types == 0.23.*,
-        haskell-lsp == 0.23.*,
+        lsp-types ^>= 1.2.0.0,
+        lsp ^>= 1.2.0.0,
         mtl,
         network-uri,
         prettyprinter-ansi-terminal,
@@ -54,12 +56,14 @@ library
         rope-utf16-splay,
         safe-exceptions,
         shake >= 0.18.4,
+        some,
         sorted-list,
         stm,
         syb,
         text,
         time,
         transformers,
+        unliftio,
         unordered-containers >= 0.2.10.0,
         utf8-string,
         hslogger
@@ -99,6 +103,7 @@ library
     include-dirs:
         include
     exposed-modules:
+        Development.IDE.Core.Compile
         Development.IDE.Core.Debouncer
         Development.IDE.Core.FileStore
         Development.IDE.Core.IdeConfiguration
@@ -108,8 +113,10 @@ library
         Development.IDE.Core.RuleTypes
         Development.IDE.Core.Service
         Development.IDE.Core.Shake
+        Development.IDE.GHC.Compat
         Development.IDE.GHC.Error
         Development.IDE.GHC.Util
+        Development.IDE.GHC.Warnings
         Development.IDE.Import.DependencyInformation
         Development.IDE.LSP.HoverDefinition
         Development.IDE.LSP.LanguageServer
@@ -124,13 +131,10 @@ library
         Development.IDE.Plugin.Completions
         Development.IDE.Plugin.CodeAction
     other-modules:
-        Development.IDE.Core.Compile
         Development.IDE.Core.Preprocessor
         Development.IDE.Core.FileExists
-        Development.IDE.GHC.Compat
         Development.IDE.GHC.CPP
         Development.IDE.GHC.Orphans
-        Development.IDE.GHC.Warnings
         Development.IDE.Import.FindImports
         Development.IDE.LSP.Notifications
         Development.IDE.LSP.Outline
@@ -174,10 +178,10 @@ executable ghcide
         aeson,
         base == 4.*,
         binary,
-        base16-bytestring >=0.1.1 && <0.2,
+        base16-bytestring ^>= 1.0,
         bytestring,
         containers,
-        cryptohash-sha1 >=0.11.100 && <0.12,
+        cryptohash-sha1 ^>=0.11.100,
         data-default,
         deepseq,
         directory,
@@ -187,9 +191,9 @@ executable ghcide
         ghc,
         gitrev,
         hashable,
-        haskell-lsp,
-        haskell-lsp-types,
-        hie-bios,
+        lsp,
+        lsp-types,
+        hie-bios ^>= 0.7.0,
         ghcide,
         optparse-applicative,
         shake,
@@ -243,12 +247,13 @@ test-suite ghcide-tests
         ghcide,
         ghc-typelits-knownnat,
         haddock-library,
-        haskell-lsp,
-        haskell-lsp-types,
+        lsp,
+        lsp-types,
         network-uri,
         lens,
-        lsp-test >= 0.8,
-        parser-combinators,
+        lsp-test >= 0.14.0,
+        optparse-applicative,
+        process,
         QuickCheck,
         quickcheck-instances,
         rope-utf16-splay,

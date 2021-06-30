@@ -1,6 +1,9 @@
 -- Copyright (c) 2019 The DAML Authors. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+
 module Development.IDE.Test
   ( Cursor
   , cursorPosition
@@ -13,12 +16,13 @@ import Control.Applicative.Combinators
 import Control.Lens hiding (List)
 import Control.Monad
 import Control.Monad.IO.Class
+import qualified Data.Aeson as Aeson
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
-import Language.Haskell.LSP.Test hiding (message)
-import qualified Language.Haskell.LSP.Test as LspTest
-import Language.Haskell.LSP.Types
-import Language.Haskell.LSP.Types.Lens as Lsp
+import Language.LSP.Test hiding (message)
+import qualified Language.LSP.Test as LspTest
+import Language.LSP.Types
+import Language.LSP.Types.Lens as Lsp
 import System.Time.Extra
 import Test.Tasty.HUnit
 
@@ -52,22 +56,21 @@ expectNoMoreDiagnostics timeout = do
     -- Send a dummy message to provoke a response from the server.
     -- This guarantees that we have at least one message to
     -- process, so message won't block or timeout.
-    void $ sendRequest (CustomClientMethod "non-existent-method") ()
-    handleMessages
+    let cm = SCustomMethod "non-existent-method"
+    i <- sendRequest cm Aeson.Null
+    go cm i
   where
-    handleMessages = handleDiagnostic <|> handleCustomMethodResponse <|> ignoreOthers
+    go cm i = handleMessages
+      where
+        handleMessages = handleDiagnostic <|> (void $ responseForId cm i) <|> ignoreOthers
+        ignoreOthers = void anyMessage >> handleMessages
     handleDiagnostic = do
-        diagsNot <- LspTest.message :: Session PublishDiagnosticsNotification
+        diagsNot <- LspTest.message STextDocumentPublishDiagnostics
         let fileUri = diagsNot ^. params . uri
             actual = diagsNot ^. params . diagnostics
         liftIO $ assertFailure $
             "Got unexpected diagnostics for " <> show fileUri <>
             " got " <> show actual
-    handleCustomMethodResponse =
-        -- the CustomClientMethod triggers a log message about ignoring it
-        -- handle that and then exit
-        void (LspTest.message :: Session LogMessageNotification)
-    ignoreOthers = void anyMessage >> handleMessages
 
 expectDiagnostics :: [(FilePath, [(DiagnosticSeverity, Cursor, T.Text)])] -> Session ()
 expectDiagnostics expected = do
@@ -77,7 +80,7 @@ expectDiagnostics expected = do
         go m
             | Map.null m = pure ()
             | otherwise = do
-                  diagsNot <- skipManyTill anyMessage LspTest.message :: Session PublishDiagnosticsNotification
+                  diagsNot <- skipManyTill anyMessage (LspTest.message STextDocumentPublishDiagnostics)
                   let fileUri = diagsNot ^. params . uri
                   case Map.lookup (diagsNot ^. params . uri . to toNormalizedUri) m of
                       Nothing -> do

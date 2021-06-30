@@ -11,7 +11,6 @@ where
 import           Control.Concurrent.Extra
 import           Control.Exception
 import           Control.Monad.Extra
-import qualified Data.Aeson                    as A
 import           Data.Binary
 import qualified Data.ByteString               as BS
 import Data.HashMap.Strict (HashMap)
@@ -26,9 +25,9 @@ import           Development.IDE.Types.Logger
 import           Development.Shake
 import           Development.Shake.Classes
 import           GHC.Generics
-import           Language.Haskell.LSP.Messages
-import           Language.Haskell.LSP.Types
-import           Language.Haskell.LSP.Types.Capabilities
+import qualified Language.LSP.Server as LSP
+import           Language.LSP.Types
+import           Language.LSP.Types.Capabilities
 import qualified System.Directory as Dir
 
 -- | A map for tracking the file existence
@@ -90,36 +89,43 @@ getFileExists fp = use_ GetFileExists fp
 -- | Installs the 'getFileExists' rules.
 --   Provides a fast implementation if client supports dynamic watched files.
 --   Creates a global state as a side effect in that case.
-fileExistsRules :: IO LspId -> ClientCapabilities -> VFSHandle -> Rules ()
-fileExistsRules getLspId ClientCapabilities{_workspace} vfs
-  | Just WorkspaceClientCapabilities{_didChangeWatchedFiles} <- _workspace
-  , Just DidChangeWatchedFilesClientCapabilities{_dynamicRegistration} <- _didChangeWatchedFiles
-  , Just True <- _dynamicRegistration
-  = fileExistsRulesFast getLspId vfs
-  | otherwise = do
-      logger <- logger <$> getShakeExtrasRules
-      liftIO $ logDebug logger "Warning: Client does not support watched files. Falling back to OS polling"
-      fileExistsRulesSlow vfs
+fileExistsRules :: ShakeLspEnv -> VFSHandle -> Rules ()
+fileExistsRules lspEnv vfs = case lspEnv of
+    DummyLspEnv _ -> fileExistsRulesSlow vfs
+    RealLspEnv lspEnv -> do
+        supportsWatchedFiles <- liftIO $ LSP.runLspT lspEnv $ do
+            ClientCapabilities {_workspace} <- LSP.getClientCapabilities
+            case () of
+                _ | Just WorkspaceClientCapabilities{_didChangeWatchedFiles} <- _workspace
+                  , Just DidChangeWatchedFilesClientCapabilities{_dynamicRegistration} <- _didChangeWatchedFiles
+                  , Just True <- _dynamicRegistration
+                    -> pure True
+                _ -> pure False
+        if supportsWatchedFiles
+            then fileExistsRulesFast lspEnv vfs
+            else do
+              logger <- logger <$> getShakeExtrasRules
+              liftIO $ logDebug logger "Warning: Client does not support watched files. Falling back to OS polling"
+              fileExistsRulesSlow vfs
 
 --   Requires an lsp client that provides WatchedFiles notifications.
-fileExistsRulesFast :: IO LspId -> VFSHandle -> Rules ()
-fileExistsRulesFast getLspId vfs = do
+fileExistsRulesFast :: LSP.LanguageContextEnv c -> VFSHandle -> Rules ()
+fileExistsRulesFast lspEnv vfs = do
   addIdeGlobal . FileExistsMapVar =<< liftIO (newVar [])
   defineEarlyCutoff $ \GetFileExists file -> do
     isWf <- isWorkspaceFile file
     if isWf
-        then fileExistsFast getLspId vfs file
+        then fileExistsFast lspEnv vfs file
         else fileExistsSlow vfs file
 
-fileExistsFast :: IO LspId -> VFSHandle -> NormalizedFilePath -> Action (Maybe BS.ByteString, ([a], Maybe Bool))
-fileExistsFast getLspId vfs file = do
+fileExistsFast :: LSP.LanguageContextEnv c -> VFSHandle -> NormalizedFilePath -> Action (Maybe BS.ByteString, ([a], Maybe Bool))
+fileExistsFast lspEnv vfs file = do
     fileExistsMap <- getFileExistsMapUntracked
     let mbFilesWatched = HashMap.lookup file fileExistsMap
     case mbFilesWatched of
       Just fv -> pure (summarizeExists fv, ([], Just fv))
       Nothing -> do
         exist                   <- liftIO $ getFileExistsVFS vfs file
-        ShakeExtras { eventer } <- getShakeExtras
 
         -- add a listener for VFS Create/Delete file events,
         -- taking the FileExistsMap lock to prevent race conditions
@@ -128,7 +134,7 @@ fileExistsFast getLspId vfs file = do
           case HashMap.alterF (,Just exist) file x of
             (Nothing, x') -> do
             -- if the listener addition fails, we never recover. This is a bug.
-              addListener eventer file
+              LSP.runLspT lspEnv (addListener file)
               return x'
             (Just _, _) ->
               -- if the key was already there, do nothing
@@ -136,23 +142,21 @@ fileExistsFast getLspId vfs file = do
 
         pure (summarizeExists exist, ([], Just exist))
  where
-  addListener eventer fp = do
-    reqId <- getLspId
+  addListener fp =
     let
-      req = RequestMessage "2.0" reqId ClientRegisterCapability regParams
       fpAsId       = T.pack $ fromNormalizedFilePath fp
-      regParams    = RegistrationParams (List [registration])
+      regParams    = RegistrationParams (List [SomeRegistration registration])
       registration = Registration fpAsId
-                                  WorkspaceDidChangeWatchedFiles
-                                  (Just (A.toJSON regOptions))
+                                  SWorkspaceDidChangeWatchedFiles
+                                  regOptions
       regOptions =
         DidChangeWatchedFilesRegistrationOptions { _watchers = List [watcher] }
       watchKind = WatchKind { _watchCreate = True, _watchChange = False, _watchDelete = True}
-      watcher = FileSystemWatcher { _globPattern = fromNormalizedFilePath fp
+      watcher = FileSystemWatcher { _globPattern = T.pack (fromNormalizedFilePath fp)
                                   , _kind        = Just watchKind
                                   }
 
-    eventer $ ReqRegisterCapability req
+    in void $ LSP.sendRequest SClientRegisterCapability regParams (const $ pure ())
 
 summarizeExists :: Bool -> Maybe BS.ByteString
 summarizeExists x = Just $ if x then BS.singleton 1 else BS.empty

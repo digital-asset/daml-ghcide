@@ -16,7 +16,7 @@ import           Data.Text                      (Text, isPrefixOf)
 import           Development.IDE.Core.Shake
 import           Development.IDE.Types.Location
 import           Development.Shake
-import           Language.Haskell.LSP.Types
+import           Language.LSP.Types
 import           System.FilePath (isRelative)
 
 -- | Lsp client relevant configuration details

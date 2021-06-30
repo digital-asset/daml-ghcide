@@ -100,7 +100,7 @@ haddockToMarkdown (H.DocIdentifier i)
   = "`" ++ i ++ "`"
 haddockToMarkdown (H.DocIdentifierUnchecked i)
   = "`" ++ i ++ "`"
-haddockToMarkdown (H.DocModule i)
+haddockToMarkdown (H.DocModule (H.ModLink i _))
   = "`" ++ i ++ "`"
 haddockToMarkdown (H.DocWarning w)
   = haddockToMarkdown w

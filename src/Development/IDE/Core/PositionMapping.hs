@@ -13,7 +13,7 @@ module Development.IDE.Core.PositionMapping
 
 import Control.Monad
 import qualified Data.Text as T
-import Language.Haskell.LSP.Types
+import Language.LSP.Types
 
 data PositionMapping = PositionMapping
   { toCurrentPosition :: !(Position -> Maybe Position)

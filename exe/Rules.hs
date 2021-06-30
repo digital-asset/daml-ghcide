@@ -17,7 +17,7 @@ import           Data.Maybe                     (fromMaybe)
 import           Data.Text                      (pack, Text)
 import           Development.IDE.Core.Rules     (defineNoFile)
 import           Development.IDE.Core.Service   (getIdeOptions)
-import           Development.IDE.Core.Shake     (actionLogger, sendEvent, define, useNoFile_)
+import           Development.IDE.Core.Shake     (ShakeLspEnv, sendNotification, actionLogger, define, useNoFile_)
 import           Development.IDE.GHC.Util
 import           Development.IDE.Types.Location (fromNormalizedFilePath)
 import           Development.IDE.Types.Options  (IdeOptions(IdeOptions, optTesting))
@@ -36,8 +36,7 @@ import qualified System.Directory.Extra         as IO
 import           System.Environment             (lookupEnv)
 import           System.FilePath.Posix          (addTrailingPathSeparator,
                                                  (</>))
-import qualified Language.Haskell.LSP.Messages  as LSP
-import qualified Language.Haskell.LSP.Types     as LSP
+import qualified Language.LSP.Types     as LSP
 import Data.Aeson (ToJSON(toJSON))
 import Development.IDE.Types.Logger (logDebug)
 
@@ -45,11 +44,9 @@ import Development.IDE.Types.Logger (logDebug)
 cacheDir :: String
 cacheDir = "ghcide"
 
-notifyCradleLoaded :: FilePath -> LSP.FromServerMessage
-notifyCradleLoaded fp =
-    LSP.NotCustomServer $
-    LSP.NotificationMessage "2.0" (LSP.CustomServerMethod cradleLoadedMethod) $
-    toJSON fp
+notifyCradleLoaded :: ShakeLspEnv -> FilePath -> IO ()
+notifyCradleLoaded lspEnv fp =
+    sendNotification lspEnv (LSP.SCustomMethod cradleLoadedMethod) (toJSON fp)
 
 loadGhcSession :: Rules ()
 loadGhcSession =
@@ -59,8 +56,8 @@ loadGhcSession =
     defineNoFile $ \(GetHscEnv opts root deps) ->
         liftIO $ createSession $ ComponentOptions opts root deps
 
-cradleToSession :: Rules ()
-cradleToSession = define $ \LoadCradle nfp -> do
+cradleToSession :: ShakeLspEnv -> Rules ()
+cradleToSession lspEnv = define $ \LoadCradle nfp -> do
 
     let f = fromNormalizedFilePath nfp
 
@@ -73,8 +70,7 @@ cradleToSession = define $ \LoadCradle nfp -> do
     mbYaml <- doesDirectoryExist f <&> \isDir -> if isDir then Nothing else Just f
     cradle <- liftIO $ maybe (loadImplicitCradle $ addTrailingPathSeparator f) loadCradle mbYaml
 
-    when optTesting $
-        sendEvent $ notifyCradleLoaded f
+    liftIO $ when optTesting $ notifyCradleLoaded lspEnv f
 
     -- Avoid interrupting `getComponentOptions` since it calls external processes
     cmpOpts <- liftIO $ mask $ \_ -> getComponentOptions cradle

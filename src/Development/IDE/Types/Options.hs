@@ -7,9 +7,7 @@
 module Development.IDE.Types.Options
   ( IdeOptions(..)
   , IdePreprocessedSource(..)
-  , IdeReportProgress(..)
   , IdeDefer(..)
-  , clientSupportsProgress
   , IdePkgLocationOptions(..)
   , defaultIdeOptions
   ) where
@@ -18,7 +16,6 @@ import Development.Shake
 import Development.IDE.GHC.Util
 import           GHC hiding (parseModule, typecheckModule)
 import           GhcPlugins                     as GHC hiding (fst3, (<>))
-import qualified Language.Haskell.LSP.Types.Capabilities as LSP
 import qualified Data.Text as T
 
 data IdeOptions = IdeOptions
@@ -43,8 +40,6 @@ data IdeOptions = IdeOptions
     -- ^ Set to 'Just' to create a directory of profiling reports.
   , optTesting :: Bool
     -- ^ Whether to enable additional lsp messages used by the test suite for checking invariants
-  , optReportProgress :: IdeReportProgress
-    -- ^ Whether to report progress during long operations.
   , optLanguageSyntax :: String
     -- ^ the ```language to use
   , optNewColonConvention :: Bool
@@ -69,12 +64,7 @@ data IdePreprocessedSource = IdePreprocessedSource
     -- ^ New parse tree emitted by the preprocessor.
   }
 
-newtype IdeReportProgress = IdeReportProgress Bool
 newtype IdeDefer          = IdeDefer          Bool
-
-clientSupportsProgress :: LSP.ClientCapabilities -> IdeReportProgress
-clientSupportsProgress caps = IdeReportProgress $ Just True ==
-    (LSP._workDoneProgress =<< LSP._window (caps :: LSP.ClientCapabilities))
 
 defaultIdeOptions :: Action (FilePath -> Action HscEnvEq) -> IdeOptions
 defaultIdeOptions session = IdeOptions
@@ -85,7 +75,6 @@ defaultIdeOptions session = IdeOptions
     ,optThreads = 0
     ,optShakeFiles = Nothing
     ,optShakeProfiling = Nothing
-    ,optReportProgress = IdeReportProgress False
     ,optLanguageSyntax = "haskell"
     ,optNewColonConvention = False
     ,optKeywords = haskellKeywords
