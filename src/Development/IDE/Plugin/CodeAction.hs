@@ -9,6 +9,7 @@
 -- | Go to the definition of a variable.
 module Development.IDE.Plugin.CodeAction(plugin) where
 
+import Control.Exception
 import Control.Monad (join)
 import Control.Monad.IO.Class
 import Development.IDE.Plugin
@@ -22,6 +23,7 @@ import Development.IDE.GHC.Util
 import Development.IDE.Plugin.CodeAction.PositionIndexed
 import Development.IDE.Plugin.CodeAction.RuleTypes
 import Development.IDE.Plugin.CodeAction.Rules
+import Development.IDE.Types.Logger
 import Development.IDE.Types.Location
 import Development.IDE.Types.Options
 import Development.Shake (Rules)
@@ -82,9 +84,16 @@ codeLens
 codeLens ideState CodeLensParams{_textDocument=TextDocumentIdentifier uri} = liftIO $ do
     fmap (Right . List) $ case uriToFilePath' uri of
       Just (toNormalizedFilePath' -> filePath) -> do
-        _ <- runAction ideState $ runMaybeT $ useE TypeCheck filePath
+        logDebug (ideLogger ideState) $ T.pack $ "code lens typecheck"
+        _ <- (runAction ideState $ runMaybeT $ useE TypeCheck filePath) `catch`
+          (\(e :: SomeException) ->  do
+                  logDebug (ideLogger ideState) $ T.pack $ "code lens typecheck failed: " ++ show e
+                  throwIO e)
+        logDebug (ideLogger ideState) $ T.pack $ "code lens typechecked"
         diag <- getDiagnostics ideState
+        logDebug (ideLogger ideState) $ T.pack $ "code lens typechecked got diags"
         hDiag <- getHiddenDiagnostics ideState
+        logDebug (ideLogger ideState) $ T.pack $ "code lens typechecked got hidden diags"
         pure
           [ CodeLens _range (Just (Command title (commandId typesignatureAddCommand) (Just $ List [toJSON edit]))) Nothing
           | (dFile, _, dDiag@Diagnostic{_range=_range}) <- diag ++ hDiag
