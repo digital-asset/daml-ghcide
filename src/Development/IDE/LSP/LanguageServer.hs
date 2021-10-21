@@ -140,7 +140,7 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
                         logError (ideLogger ide) $ T.pack $
                           "Unexpected exception on notification, please report!\n" ++
                           "Exception: " ++ show e
-                    ReactorRequest _id act k -> void $ async $
+                    ReactorRequest _id act k -> void $
                       checkCancelled ide clearReqId waitForCancel _id act k
             pure $ Right (env,ide)
 
@@ -149,7 +149,7 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
           -> IO () -> (ResponseError -> IO ()) -> IO ()
         checkCancelled ide clearReqId waitForCancel _id act k =
             flip finally (liftIO $ clearReqId _id) $
-                catch (do
+                catchAsync (do
                     -- We could optimize this by first checking if the id
                     -- is in the cancelled set. However, this is unlikely to be a
                     -- bottleneck and the additional check might hide
@@ -161,11 +161,18 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
                                 "Cancelled request " <> show _id
                             k $ ResponseError RequestCancelled "" Nothing
                         Right res -> pure res
-                ) $ \(e :: SomeException) -> do
-                    liftIO $ logError (ideLogger ide) $ T.pack $
-                        "Unexpected exception on request, please report!\n" ++
-                        "Exception: " ++ show e
-                    k $ ResponseError InternalError (T.pack $ show e) Nothing
+                ) $ \(e :: SomeException) ->
+                    -- A call to runAction can fail with AsyncCancelled if we mess up our concurrency management.
+                    -- We want to catch that exception and print it here instead of silently dying.
+                    -- We still shouldn’t catch UserInterrupt or other stuff so we rethrow every
+                    -- other asynchronous exception.
+                    if isSyncException e || isJust (fromException @AsyncCancelled e)
+                      then do
+                        liftIO $ logError (ideLogger ide) $ T.pack $
+                            "Unexpected exception on request, please report!\n" ++
+                            "Exception: " ++ show e
+                        k $ ResponseError InternalError (T.pack $ show e) Nothing
+                      else throwIO e
 
 cancelHandler :: (SomeLspId -> IO ()) -> LSP.Handlers (ServerM c)
 cancelHandler cancelRequest = LSP.notificationHandler SCancelRequest $ \NotificationMessage{_params=CancelParams{_id}} ->
