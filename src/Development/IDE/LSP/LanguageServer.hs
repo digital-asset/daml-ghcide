@@ -18,6 +18,7 @@ import Control.Concurrent.Chan
 import Control.Concurrent.Extra
 import Control.Concurrent.Async
 import Control.Concurrent.STM
+import qualified Control.Exception
 import Control.Exception.Safe
 import Data.Aeson (Value)
 import Data.Maybe
@@ -150,7 +151,7 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
           -> IO () -> (ResponseError -> IO ()) -> IO ()
         checkCancelled ide clearReqId waitForCancel _id act k =
             flip finally (liftIO $ clearReqId _id) $
-                catch (do
+                Control.Exception.catch (do
                     -- We could optimize this by first checking if the id
                     -- is in the cancelled set. However, this is unlikely to be a
                     -- bottleneck and the additional check might hide
