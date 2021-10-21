@@ -134,6 +134,7 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
 
             _ <- flip forkFinally (const exitClientMsg) $ forever $ do
                 msg <- readChan clientMsgChan
+                logDebug (ideLogger ide) (T.pack $ "Read request from chan " <> show msg)
                 case msg of
                     ReactorNotification act ->
                       catch act $ \(e :: SomeException) ->
@@ -160,7 +161,9 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
                             logDebug (ideLogger ide) $ T.pack $
                                 "Cancelled request " <> show _id
                             k $ ResponseError RequestCancelled "" Nothing
-                        Right res -> pure res
+                        Right res -> do
+                            logDebug (ideLogger ide) (T.pack $ "Successful request for " <> show _id)
+                            pure res
                 ) $ \(e :: SomeException) -> do
                     liftIO $ logError (ideLogger ide) $ T.pack $
                         "Unexpected exception on request, please report!\n" ++
