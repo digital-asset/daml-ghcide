@@ -39,11 +39,10 @@ import           DynamicLoading (initializePlugins)
 import           GHC hiding (parseModule, typecheckModule)
 import qualified Parser
 import           Lexer
-#if MIN_GHC_API_VERSION(8,10,0)
-#else
-import ErrUtils
-#endif
+import           ErrUtils
 
+import qualified Bag
+import qualified EnumSet
 import           Finder
 import qualified Development.IDE.GHC.Compat     as GHC
 import           GhcMonad
@@ -398,7 +397,19 @@ parseFileContents customPreprocessor dflags filename contents = do
                (Map.fromListWith (++) $ annotations pst,
                  Map.fromList ((noSrcSpan,comment_q pst)
                                   :annotations_comments pst))
-             (warns, errs) = getMessages pst dflags
+             (warns, errs) =
+                let (ws, es) = getMessages pst dflags
+                    (ws', es') = flip Bag.partitionBagWith ws $ \w ->
+                        -- This ensures -Werror=foo is respected
+                        case errMsgReason w of
+                            Reason flag
+                                | flag `EnumSet.member` fatalWarningFlags dflags
+                                -> Right w
+                                    { errMsgSeverity = SevError
+                                    , errMsgReason = ErrReason (Just flag)
+                                    }
+                            _ -> Left w
+                in (ws', es `Bag.unionBags` es')
          in
            do
                -- Just because we got a `POk`, it doesn't mean there
@@ -411,7 +422,7 @@ parseFileContents customPreprocessor dflags filename contents = do
                -- errors are those from which a parse tree just can't
                -- be produced.
                unless (null errs) $
-                 throwE $ diagFromErrMsgs "parser" dflags $ snd $ getMessages pst dflags
+                 throwE $ diagFromErrMsgs "parser" dflags errs
 
                -- Ok, we got here. It's safe to continue.
                let IdePreprocessedSource preproc_warns errs parsed = customPreprocessor dflags rdr_module
