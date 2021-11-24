@@ -60,6 +60,7 @@ import Data.Map.Strict (Map)
 import           Data.List.Extra (foldl', partition, takeEnd)
 import qualified Data.Set as Set
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import Data.Traversable (for)
 import Data.Tuple.Extra
 import Data.Unique
@@ -74,6 +75,7 @@ import           Control.Concurrent.Async
 import           Control.Concurrent.Extra
 import           Control.Exception hiding (bracket_)
 import           Control.DeepSeq
+import System.IO (stderr)
 import           System.Time.Extra
 import           Data.Typeable
 import qualified Language.LSP.Server as LSP
@@ -587,9 +589,11 @@ defineEarlyCutoff op = addBuiltinRule noLint noIdentity $ \(Q (key, file)) (old 
         case val of
             Just res -> return res
             Nothing -> do
+                liftIO $ T.hPutStrLn stderr ("--> " <> T.pack (show (key, file)))
                 (bs, (diags, res)) <- actionCatch
                     (do v <- op key file; liftIO $ evaluate $ force v) $
                     \(e :: SomeException) -> pure (Nothing, ([ideErrorText file $ T.pack $ show e | not $ isBadDependency e],Nothing))
+                liftIO $ T.hPutStrLn stderr ("<-- " <> T.pack (show (key, file)))
                 modTime <- liftIO $ (currentValue =<<) <$> getValues state GetModificationTime file
                 (bs, res) <- case res of
                     Nothing -> do
