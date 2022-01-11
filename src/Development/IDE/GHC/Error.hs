@@ -69,8 +69,13 @@ srcSpanToRange (RealSrcSpan real) = realSrcSpanToRange real
 
 realSrcSpanToRange :: RealSrcSpan -> Range
 realSrcSpanToRange real =
-  Range (Position (srcSpanStartLine real - 1) (srcSpanStartCol real - 1))
-            (Position (srcSpanEndLine real - 1) (srcSpanEndCol real - 1))
+  Range
+    (Position
+      (fromIntegral $ srcSpanStartLine real - 1)
+      (fromIntegral $ srcSpanStartCol real - 1))
+    (Position
+      (fromIntegral $ srcSpanEndLine real - 1)
+      (fromIntegral $ srcSpanEndCol real - 1))
 
 -- | Extract a file name from a GHC SrcSpan (use message for unhelpful ones)
 -- FIXME This may not be an _absolute_ file name, needs fixing.

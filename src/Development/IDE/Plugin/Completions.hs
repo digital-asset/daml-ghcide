@@ -78,7 +78,7 @@ getCompletionsLSP ide
               (Just (VFS.PosPrefixInfo _ "" _ _), Just CompletionContext { _triggerCharacter = Just "."})
                 -> return (InL $ List [])
               (Just pfix', _) -> do
-                let fakeClientCapabilities = ClientCapabilities Nothing Nothing Nothing Nothing
+                let fakeClientCapabilities = ClientCapabilities Nothing Nothing Nothing Nothing Nothing
                 InL . List <$> getCompletions ideOpts cci' pm pfix' fakeClientCapabilities (WithSnippets True)
               _ -> return (InL $ List [])
           _ -> return (InL $ List [])

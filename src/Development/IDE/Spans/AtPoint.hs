@@ -96,8 +96,12 @@ atPoint IdeOptions{..} (SpansInfo srcSpans cntsSpans) pos = do
       | otherwise         = txt
 
     range SpanInfo{..} = Range
-      (Position spaninfoStartLine spaninfoStartCol)
-      (Position spaninfoEndLine spaninfoEndCol)
+      (Position
+        (fromIntegral spaninfoStartLine)
+        (fromIntegral spaninfoStartCol))
+      (Position
+        (fromIntegral spaninfoEndLine)
+        (fromIntegral spaninfoEndCol))
 
     colon = if optNewColonConvention then ": " else ":: "
     wrapLanguageSyntax x = T.unlines [ "```" <> T.pack optLanguageSyntax, x, "```"]
@@ -154,8 +158,8 @@ locationsAtPoint getHieFile _ pos =
 -- | Filter out spans which do not enclose a given point
 spansAtPoint :: Position -> [SpanInfo] -> [SpanInfo]
 spansAtPoint pos = filter atp where
-  line = _line pos
-  cha = _character pos
+  line = fromIntegral $ _line pos
+  cha = fromIntegral $ _character pos
   atp SpanInfo{..} =
       startsBeforePosition && endsAfterPosition
     where

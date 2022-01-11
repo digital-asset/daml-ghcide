@@ -247,7 +247,7 @@ dupHandleTo filepath h other_side
 
 -- | This is copied unmodified from GHC since it is not exposed.
 -- Note the beautiful inline comment!
-dupHandle_ :: (IODevice dev, BufferedIO dev, Typeable dev) => dev
+dupHandle_ :: (RawIO dev, IODevice dev, BufferedIO dev, Typeable dev) => dev
            -> FilePath
            -> Maybe (MVar Handle__)
            -> Handle__
