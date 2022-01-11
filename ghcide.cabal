@@ -193,7 +193,7 @@ executable ghcide
         hashable,
         lsp,
         lsp-types,
-        hie-bios ^>= 0.8.1,
+        hie-bios ^>= 0.7.0,
         ghcide,
         optparse-applicative,
         shake,
