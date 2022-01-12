@@ -10,6 +10,7 @@ module Main(main) where
 
 import Arguments
 import Data.Maybe
+import qualified Data.List as L (length)
 import Data.List.Extra
 import System.FilePath
 import Control.Concurrent.Extra
@@ -114,12 +115,12 @@ main = do
         files <- expandFiles (argFiles ++ ["." | null argFiles])
         -- LSP works with absolute file paths, so try and behave similarly
         files <- nubOrd <$> mapM IO.canonicalizePath files
-        putStrLn $ "Found " ++ show (length files) ++ " files"
+        putStrLn $ "Found " ++ show (L.length files) ++ " files"
 
         putStrLn "\nStep 2/6: Looking for hie.yaml files that control setup"
         cradles <- mapM findCradle files
         let ucradles = nubOrd cradles
-        let n = length ucradles
+        let n = L.length ucradles
         putStrLn $ "Found " ++ show n ++ " cradle" ++ ['s' | n /= 1]
         sessions <- forM (zipFrom (1 :: Int) ucradles) $ \(i, x) -> do
             let msg = maybe ("Implicit cradle for " ++ dir) ("Loading " ++) x
@@ -151,7 +152,7 @@ main = do
         when (failed /= []) $
             putStr $ unlines $ "Files that failed:" : map ((++) " * " . snd) failed
 
-        let files xs = let n = length xs in if n == 1 then "1 file" else show n ++ " files"
+        let files xs = let n = L.length xs in if n == 1 then "1 file" else show n ++ " files"
         putStrLn $ "\nCompleted (" ++ files worked ++ " worked, " ++ files failed ++ " failed)"
 
         unless (null failed) exitFailure

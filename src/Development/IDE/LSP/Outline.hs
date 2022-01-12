@@ -9,7 +9,13 @@ module Development.IDE.LSP.Outline
 where
 
 import           Language.LSP.Server (LspM)
-import           Language.LSP.Types
+import           Language.LSP.Types             (DocumentSymbol (..),
+                                                 DocumentSymbolParams (DocumentSymbolParams, _textDocument),
+                                                 List (..), ResponseError,
+                                                 SymbolInformation,
+                                                 SymbolKind (..),
+                                                 TextDocumentIdentifier (TextDocumentIdentifier),
+                                                 type (|?) (InL), uriToFilePath)
 import           Control.Monad.IO.Class
 import           Data.Functor
 import           Data.Generics

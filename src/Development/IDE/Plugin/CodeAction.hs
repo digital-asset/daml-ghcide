@@ -322,7 +322,7 @@ suggestSignature isQuickFix Diagnostic{_range=_range@Range{..},..}
       startOfLine    = Position (_line _start) startCharacter
       beforeLine     = Range startOfLine startOfLine
       title          = if isQuickFix then "add signature: " <> signature else signature
-      action         = TextEdit beforeLine $ signature <> "\n" <> T.replicate startCharacter " "
+      action         = TextEdit beforeLine $ signature <> "\n" <> T.replicate (fromIntegral startCharacter) " "
       in [(title, [action])]
     where removeInitialForAll :: T.Text -> T.Text
           removeInitialForAll (T.breakOnEnd " :: " -> (nm, ty))
@@ -349,7 +349,7 @@ suggestNewImport packageExportsMap ParsedModule {pm_parsed_source = L _ HsModule
         _ -> case srcSpanEnd $ getLoc (last hsmodImports) of
           RealSrcLoc s -> Just $ srcLocLine s
           _ -> Nothing
-  , insertPos <- Position insertLine 0
+  , insertPos <- Position (fromIntegral insertLine) 0
   , extendImportSuggestions <- matchRegex msg
     "Perhaps you want to add ‘[^’]*’ to the import list in the import of ‘([^’]*)’"
   = [(imp, [TextEdit (Range insertPos insertPos) (imp <> "\n")])
@@ -461,7 +461,7 @@ extendToWholeLineIfPossible contents range@Range{..} =
     in if extend then Range _start (Position (_line _end + 1) 0) else range
 
 splitTextAtPosition :: Position -> T.Text -> (T.Text, T.Text)
-splitTextAtPosition (Position row col) x
+splitTextAtPosition (Position (fromIntegral -> row) (fromIntegral -> col)) x
     | (preRow, mid:postRow) <- splitAt row $ T.splitOn "\n" x
     , (preCol, postCol) <- T.splitAt col mid
         = (T.intercalate "\n" $ preRow ++ [preCol], T.intercalate "\n" $ postCol : postRow)
@@ -469,7 +469,7 @@ splitTextAtPosition (Position row col) x
 
 -- | Returns [start .. end[
 textInRange :: Range -> T.Text -> T.Text
-textInRange (Range (Position startRow startCol) (Position endRow endCol)) text =
+textInRange (Range (Position (fromIntegral -> startRow) (fromIntegral -> startCol)) (Position (fromIntegral -> endRow) (fromIntegral -> endCol))) text =
     case compare startRow endRow of
       LT ->
         let (linesInRangeBeforeEndLine, endLineAndFurtherLines) = splitAt (endRow - startRow) linesBeginningWithStartLine

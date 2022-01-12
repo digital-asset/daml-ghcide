@@ -1,6 +1,8 @@
 -- Copyright (c) 2019 The DAML Authors. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
+{-# LANGUAGE CPP #-}
+
 -- | General utility functions, mostly focused around GHC operations.
 module Development.IDE.GHC.Util(
     -- * HcsEnv and environment
@@ -247,7 +249,11 @@ dupHandleTo filepath h other_side
 
 -- | This is copied unmodified from GHC since it is not exposed.
 -- Note the beautiful inline comment!
+#if MIN_VERSION_base(4,15,0)
+dupHandle_ :: (RawIO dev, IODevice dev, BufferedIO dev, Typeable dev) => dev
+#else
 dupHandle_ :: (IODevice dev, BufferedIO dev, Typeable dev) => dev
+#endif
            -> FilePath
            -> Maybe (MVar Handle__)
            -> Handle__

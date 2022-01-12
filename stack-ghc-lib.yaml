@@ -1,10 +1,12 @@
-resolver: lts-18.0
+resolver: nightly-2022-01-10
 packages:
 - .
 extra-deps:
-- lsp-1.2.0.0
-- lsp-types-1.2.0.0
-- lsp-test-0.14.0.0
+- lsp-1.4.0.0
+- lsp-types-1.4.0.0
+- lsp-test-0.14.0.2
+- url: https://daml-binaries.da-ext.net/da-ghc-lib/ghc-lib-33b606cf39f957a5e75b7c3b44f18a0d.tar.gz
+- url: https://daml-binaries.da-ext.net/da-ghc-lib/ghc-lib-parser-33b606cf39f957a5e75b7c3b44f18a0d.tar.gz
 nix:
   packages: [zlib]
 flags:

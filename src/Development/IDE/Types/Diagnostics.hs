@@ -17,16 +17,16 @@ module Development.IDE.Types.Diagnostics (
 import Control.DeepSeq
 import Data.Maybe as Maybe
 import qualified Data.Text as T
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 import Language.LSP.Types as LSP
   ( DiagnosticSeverity(..)
   , Diagnostic(..)
   , List(..)
   )
 import Language.LSP.Diagnostics
-import Data.Text.Prettyprint.Doc.Render.Text
-import qualified Data.Text.Prettyprint.Doc.Render.Terminal as Terminal
-import Data.Text.Prettyprint.Doc.Render.Terminal (Color(..), color)
+import Prettyprinter.Render.Text
+import qualified Prettyprinter.Render.Terminal as Terminal
+import Prettyprinter.Render.Terminal (Color(..), color)
 
 import Development.IDE.Types.Location
 
@@ -67,7 +67,7 @@ type FileDiagnostic = (NormalizedFilePath, ShowDiagnostic, Diagnostic)
 
 prettyRange :: Range -> Doc Terminal.AnsiStyle
 prettyRange Range{..} = f _start <> "-" <> f _end
-    where f Position{..} = pretty (_line+1) <> colon <> pretty (_character+1)
+    where f Position{..} = pretty (show $ _line+1) <> colon <> pretty (show $ _character+1)
 
 stringParagraphs :: T.Text -> Doc a
 stringParagraphs = vcat . map (fillSep . map pretty . T.words) . T.lines

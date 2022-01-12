@@ -82,6 +82,7 @@ import qualified Language.LSP.Types.Capabilities as LSP
 import           System.FilePath hiding (makeRelative)
 import qualified Development.Shake as Shake
 import           Control.Monad.Extra
+import qualified Data.List as List
 import           Data.Time
 import           GHC.Generics
 import           System.IO.Unsafe
@@ -384,7 +385,7 @@ lspShakeProgress inProgress = do
         loop id prev = do
             liftIO  $sleep sample
             current <- liftIO $ readVar inProgress
-            let done = length $ filter (== 0) $ HMap.elems current
+            let done = List.length $ filter (== 0) $ HMap.elems current
             let todo = HMap.size current
             let next = Just $ T.pack $ show done <> "/" <> show todo
             when (next /= prev) $
@@ -756,7 +757,7 @@ updateFileDiagnostics fp k ShakeExtras{diagnostics, hiddenDiagnostics, published
                  let lastPublish = HMap.lookupDefault [] uri published
                  when (lastPublish /= newDiags) $
                      sendNotification lspEnv LSP.STextDocumentPublishDiagnostics $
-                     LSP.PublishDiagnosticsParams (fromNormalizedUri uri) ver (List newDiags)
+                     LSP.PublishDiagnosticsParams (fromNormalizedUri uri) (fmap fromIntegral ver) (List newDiags)
                  pure $! HMap.insert uri newDiags published
 
 newtype Priority = Priority Double
@@ -783,7 +784,7 @@ instance Binary   GetModificationTime
 type instance RuleResult GetModificationTime = FileVersion
 
 data FileVersion
-    = VFSVersion Int
+    = VFSVersion Int32
     | ModificationTime
       !Int   -- ^ Large unit (platform dependent, do not make assumptions)
       !Int   -- ^ Small unit (platform dependent, do not make assumptions)
@@ -791,7 +792,7 @@ data FileVersion
 
 instance NFData FileVersion
 
-vfsVersion :: FileVersion -> Maybe Int
+vfsVersion :: FileVersion -> Maybe Int32
 vfsVersion (VFSVersion i) = Just i
 vfsVersion ModificationTime{} = Nothing
 

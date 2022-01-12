@@ -46,19 +46,23 @@ toCurrent (Range (Position startLine startColumn) (Position endLine endColumn)) 
     | line > endLine || line == endLine && column >= endColumn =
       -- Position is after the change so increase line and column number
       -- as necessary.
-      Just $ Position (line + lineDiff) newColumn
+      Just $! newLine `seq` newColumn `seq` Position newLine newColumn
     | otherwise = Nothing
     -- Position is in the region that was changed.
     where
         lineDiff = linesNew - linesOld
-        linesNew = T.count "\n" t
+        linesNew = fromIntegral $ T.count "\n" t
         linesOld = endLine - startLine
+        newEndColumn :: UInt
         newEndColumn
-          | linesNew == 0 = startColumn + T.length t
-          | otherwise = T.length $ T.takeWhileEnd (/= '\n') t
+          | linesNew == 0 = startColumn + fromIntegral (T.length t)
+          | otherwise = fromIntegral $ T.length $ T.takeWhileEnd (/= '\n') t
+        newColumn :: UInt
         newColumn
           | line == endLine = column + newEndColumn - endColumn
           | otherwise = column
+        newLine :: UInt
+        newLine = line + lineDiff
 
 fromCurrent :: Range -> T.Text -> Position -> Maybe Position
 fromCurrent (Range (Position startLine startColumn) (Position endLine endColumn)) t (Position line column)
@@ -68,17 +72,23 @@ fromCurrent (Range (Position startLine startColumn) (Position endLine endColumn)
     | line > newEndLine || line == newEndLine && column >= newEndColumn =
       -- Position is after the change so increase line and column number
       -- as necessary.
-      Just $ Position (line - lineDiff) newColumn
+      Just $! newLine `seq` newColumn `seq` Position newLine newColumn
     | otherwise = Nothing
     -- Position is in the region that was changed.
     where
         lineDiff = linesNew - linesOld
-        linesNew = T.count "\n" t
+        linesNew :: UInt
+        linesNew = fromIntegral $ T.count "\n" t
         linesOld = endLine - startLine
+        newEndLine :: UInt
         newEndLine = endLine + lineDiff
+        newEndColumn :: UInt
         newEndColumn
-          | linesNew == 0 = startColumn + T.length t
-          | otherwise = T.length $ T.takeWhileEnd (/= '\n') t
+          | linesNew == 0 = startColumn + fromIntegral (T.length t)
+          | otherwise = fromIntegral $ T.length $ T.takeWhileEnd (/= '\n') t
+        newColumn :: UInt
         newColumn
-          | line == newEndLine = column - (newEndColumn - endColumn)
+          | line == newEndLine = column + endColumn - newEndColumn
           | otherwise = column
+        newLine :: UInt
+        newLine = line - lineDiff
