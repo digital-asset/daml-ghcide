@@ -1,8 +1,9 @@
 -- Copyright (c) 2019 The DAML Authors. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE PolyKinds #-}
@@ -28,7 +29,56 @@ import Development.IDE.Test
 import Development.IDE.Test.Runfiles
 import Development.IDE.Types.Location
 import Language.LSP.Test
-import Language.LSP.Types hiding (mkRange)
+import Language.LSP.Types (
+    CodeAction (..),
+    CodeLens (..),
+    CodeLensOptions (..),
+    Command (..),
+    CompletionDoc (..),
+    CompletionItem (..),
+    CompletionItemKind (..),
+    CompletionOptions (..),
+    CustomMessage (..),
+    Diagnostic (..),
+    DiagnosticSeverity (..),
+    DidChangeWatchedFilesRegistrationOptions (..),
+    DidOpenTextDocumentParams (..),
+    DocumentSymbol (..),
+    ExecuteCommandOptions (..),
+    FromServerMessage,
+    FromServerMessage' (..),
+    Hover (..),
+    HoverContents (..),
+    InitializeResult (..),
+    InsertTextFormat (..),
+    List (..),
+    LocationLink (..),
+    MarkupContent (..),
+    Method (..),
+    NotificationMessage (..),
+    ProgressParams (..),
+    PublishDiagnosticsParams (..),
+    Registration (..),
+    RegistrationParams (..),
+    RequestMessage (..),
+    ResponseMessage (..),
+    SaveOptions (..),
+    SMethod (..),
+    SomeProgressParams (..),
+    SomeRegistration (..),
+    SServerMethod,
+    SymbolKind (..),
+    TextDocumentContentChangeEvent (..),
+    TextDocumentIdentifier (..),
+    TextDocumentItem (..),
+    TextDocumentSyncKind (..),
+    TextDocumentSyncOptions (..),
+    UInt,
+    type (|?) (..),
+    filePathToUri,
+    toEither,
+    uriToFilePath,
+  )
 import Language.LSP.Types.Capabilities
 import Language.LSP.VFS (applyChange)
 import Network.URI
@@ -969,7 +1019,7 @@ suggestImportTests = testGroup "suggest import actions"
       liftIO $ writeFileUTF8 (dir </> "hie.yaml") cradle
       doc <- createDoc "Test.hs" "haskell" before
       _diags <- waitForDiagnostics
-      let defLine = length imps + 1
+      let defLine = fromIntegral $ length imps + 1
           range = Range (Position defLine 0) (Position defLine maxBound)
       actions <- getCodeActions doc range
       if wanted
@@ -1902,7 +1952,7 @@ outlineTests = testGroup
                                            loc
                                            (Just $ List cc)
 
-pattern R :: Int -> Int -> Int -> Int -> Range
+pattern R :: UInt -> UInt -> UInt -> UInt -> Range
 pattern R x y x' y' = Range (Position x y) (Position x' y')
 
 xfail :: TestTree -> String -> TestTree
@@ -1919,7 +1969,7 @@ data Expect
 --  | ExpectExtern -- TODO: as above, but expected to succeed: need some more info in here, once we have some working examples
   deriving Eq
 
-mkR :: Int -> Int -> Int -> Int -> Expect
+mkR :: UInt -> UInt -> UInt -> UInt -> Expect
 mkR startLine startColumn endLine endColumn = ExpectRange $ mkRange startLine startColumn endLine endColumn
 
 haddockTests :: TestTree
@@ -2087,7 +2137,7 @@ pickActionWithTitle title actions = do
         , title == actionTitle
         ]
 
-mkRange :: Int -> Int -> Int -> Int -> Range
+mkRange :: UInt -> UInt -> UInt -> UInt -> Range
 mkRange a b c d = Range (Position a b) (Position c d)
 
 run :: Session a -> IO a
@@ -2108,7 +2158,7 @@ runInDir dir s = do
   -- HIE calls getXgdDirectory which assumes that HOME is set.
   -- Only sets HOME if it wasn't already set.
   setEnv "HOME" "/homeless-shelter" False
-  let lspTestCaps = fullCaps { _window = Just $ WindowClientCapabilities $ Just True }
+  let lspTestCaps = fullCaps { _window = Just $ WindowClientCapabilities (Just True) Nothing Nothing }
   runSessionWithConfig conf cmd lspTestCaps dir s
   where
     conf = defaultConfig
@@ -2304,24 +2354,28 @@ genRope = Rope.fromText . getPrintableText <$> arbitrary
 
 genPosition :: Rope -> Gen Position
 genPosition r = do
-    row <- choose (0, max 0 $ rows - 1)
+    let rows = Rope.rows r
+    row <- choose (0, max 0 $ rows - 1) `suchThat` inBounds @UInt
     let columns = Rope.columns (nthLine row r)
-    column <- choose (0, max 0 $ columns - 1)
-    pure $ Position row column
-    where rows = Rope.rows r
+    column <- choose (0, max 0 $ columns - 1) `suchThat` inBounds @UInt
+    pure $ Position (fromIntegral row) (fromIntegral column)
 
 genRange :: Rope -> Gen Range
 genRange r = do
+    let rows = Rope.rows r
     startPos@(Position startLine startColumn) <- genPosition r
-    let maxLineDiff = max 0 $ rows - 1 - startLine
-    endLine <- choose (startLine, startLine + maxLineDiff)
-    let columns = Rope.columns (nthLine endLine r)
+    let maxLineDiff = max 0 $ rows - 1 - fromIntegral startLine
+    endLine <- choose (fromIntegral startLine, fromIntegral startLine + maxLineDiff) `suchThat` inBounds @UInt
+    let columns = Rope.columns (nthLine (fromIntegral endLine) r)
     endColumn <-
-        if startLine == endLine
-            then choose (startColumn, columns)
+        if fromIntegral startLine == endLine
+            then choose (fromIntegral startColumn, columns)
             else choose (0, max 0 $ columns - 1)
-    pure $ Range startPos (Position endLine endColumn)
-    where rows = Rope.rows r
+        `suchThat` inBounds @UInt
+    pure $ Range startPos (Position (fromIntegral endLine) (fromIntegral endColumn))
+
+inBounds :: forall b a . (Integral a, Integral b, Bounded b) => a -> Bool
+inBounds a = let i = toInteger a in i <= toInteger (maxBound @b) && i >= toInteger (minBound @b)
 
 -- | Get the ith line of a rope, starting from 0. Trailing newline not included.
 nthLine :: Int -> Rope -> Rope
