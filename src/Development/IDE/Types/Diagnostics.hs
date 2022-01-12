@@ -17,16 +17,16 @@ module Development.IDE.Types.Diagnostics (
 import Control.DeepSeq
 import Data.Maybe as Maybe
 import qualified Data.Text as T
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 import Language.LSP.Types as LSP
   ( DiagnosticSeverity(..)
   , Diagnostic(..)
   , List(..)
   )
 import Language.LSP.Diagnostics
-import Data.Text.Prettyprint.Doc.Render.Text
-import qualified Data.Text.Prettyprint.Doc.Render.Terminal as Terminal
-import Data.Text.Prettyprint.Doc.Render.Terminal (Color(..), color)
+import Prettyprinter.Render.Text
+import qualified Prettyprinter.Render.Terminal as Terminal
+import Prettyprinter.Render.Terminal (Color(..), color)
 
 import Development.IDE.Types.Location
 
