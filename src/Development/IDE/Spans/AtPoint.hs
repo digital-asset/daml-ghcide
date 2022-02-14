@@ -128,8 +128,11 @@ locationsAtPoint
   -> Position
   -> [SpanInfo]
   -> m [Location]
-locationsAtPoint getHieFile _ pos =
+locationsAtPoint getHieFile _ pos infos =
+  let
+   go =
     fmap (map srcSpanToLocation) . mapMaybeM (getSpan . spaninfoSource) . spansAtPoint pos
+  in liftIO (print infos) >> go infos
   where getSpan :: SpanSource -> m (Maybe SrcSpan)
         getSpan NoSource = pure Nothing
         getSpan (SpanS sp) = pure $ Just sp
