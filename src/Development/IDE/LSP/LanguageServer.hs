@@ -100,6 +100,7 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
           [ ideHandlers
           , cancelHandler cancelRequest
           , exitHandler exit
+          , initializedHandler
           ]
           -- Cancel requests are special since they need to be handled
           -- out of order to be useful. Existing handlers are run afterwards.
@@ -180,6 +181,9 @@ cancelHandler cancelRequest = LSP.notificationHandler SCancelRequest $ \Notifica
 
 exitHandler :: IO () -> LSP.Handlers (ServerM c)
 exitHandler exit = LSP.notificationHandler SExit (const $ liftIO exit)
+
+initializedHandler :: LSP.Handlers (ServerM c)
+initializedHandler = LSP.notificationHandler SInitialized (const $ pure ())
 
 modifyOptions :: LSP.Options -> LSP.Options
 modifyOptions x = x{ LSP.textDocumentSync   = Just $ tweakTDS origTDS
