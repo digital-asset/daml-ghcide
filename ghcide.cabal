@@ -69,8 +69,8 @@ library
         hslogger
     if flag(ghc-lib)
       build-depends:
-        ghc-lib >= 8.8,
-        ghc-lib-parser >= 8.8
+        ghc-lib == 8.8.1.*,
+        ghc-lib-parser == 8.8.1.*
       cpp-options: -DGHC_LIB
     else
       build-depends:
@@ -123,6 +123,7 @@ library
         Development.IDE.LSP.Protocol
         Development.IDE.LSP.Server
         Development.IDE.Spans.Common
+        Development.IDE.Spans.Type
         Development.IDE.Types.Diagnostics
         Development.IDE.Types.Location
         Development.IDE.Types.Logger
@@ -141,7 +142,6 @@ library
         Development.IDE.Spans.AtPoint
         Development.IDE.Spans.Calculate
         Development.IDE.Spans.Documentation
-        Development.IDE.Spans.Type
         Development.IDE.Plugin.CodeAction.PositionIndexed
         Development.IDE.Plugin.CodeAction.Rules
         Development.IDE.Plugin.CodeAction.RuleTypes
