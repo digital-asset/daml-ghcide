@@ -5,5 +5,7 @@ extra-deps:
 - lsp-1.4.0.0
 - lsp-types-1.4.0.0
 - lsp-test-0.14.0.2
+- git: https://github.com/digital-asset/ghc.git
+  commit: 086206008be781bd43349aee2888caba5b9901bf
 nix:
   packages: [zlib]
