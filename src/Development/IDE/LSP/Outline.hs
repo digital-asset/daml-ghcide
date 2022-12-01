@@ -141,7 +141,7 @@ documentSymbolForDecl (L l (DerivD DerivDecl { deriv_type })) =
                                             , _kind = SkInterface
                                             }
 documentSymbolForDecl (L l (ValD FunBind{fun_id = L _ name}))
-  | "_choice_" `T.isPrefixOf` showRdrName name = Nothing
+  | isDamlGenerated name = Nothing
   | otherwise = Just
     (defDocumentSymbol l :: DocumentSymbol)
       { _name   = showRdrName name
