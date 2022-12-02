@@ -34,6 +34,8 @@ import           Outputable                     ( Outputable
                                                 , showSDocUnsafe
                                                 )
 
+import RdrHsSyn (isDamlGenerated)
+
 moduleOutline
   :: IdeState -> DocumentSymbolParams -> LspM c (Either ResponseError (List DocumentSymbol |? List SymbolInformation))
 moduleOutline ideState DocumentSymbolParams { _textDocument = TextDocumentIdentifier uri }
