@@ -13,5 +13,12 @@ pr:
       - daml
 
 jobs:
-  - template: ./.azure/linux-stack.yml
-  - template: ./.azure/windows-stack.yml
+  - job: run
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - checkout: self
+    - bash: |
+        set -euo pipefail
+
+        echo "All good!"
