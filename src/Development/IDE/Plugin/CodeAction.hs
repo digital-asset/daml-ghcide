@@ -392,18 +392,21 @@ notInScope (NotInScopeDataConstructor t) = t
 notInScope (NotInScopeTypeConstructorOrClass t) = t
 notInScope (NotInScopeThing t) = t
 
+dropSurroundingParens :: T.Text -> T.Text
+dropSurroundingParens = T.dropAround (`elem` ("()" :: String))
+
 extractNotInScopeName :: T.Text -> Maybe NotInScope
 extractNotInScopeName x
   | Just [name] <- matchRegex x "Data constructor not in scope: ([^ ]+)"
-  = Just $ NotInScopeDataConstructor name
+  = Just $ NotInScopeDataConstructor $ dropSurroundingParens name
   | Just [name] <- matchRegex x "Not in scope: data constructor [^‘]*‘([^’]*)’"
-  = Just $ NotInScopeDataConstructor name
+  = Just $ NotInScopeDataConstructor $ dropSurroundingParens name
   | Just [name] <- matchRegex x "ot in scope: type constructor or class [^‘]*‘([^’]*)’"
-  = Just $ NotInScopeTypeConstructorOrClass name
+  = Just $ NotInScopeTypeConstructorOrClass $ dropSurroundingParens name
   | Just [name] <- matchRegex x "ot in scope: ([^‘ ]+)"
-  = Just $ NotInScopeThing name
+  = Just $ NotInScopeThing $ dropSurroundingParens name
   | Just [name] <- matchRegex x "ot in scope:[^‘]*‘([^’]*)’"
-  = Just $ NotInScopeThing name
+  = Just $ NotInScopeThing $ dropSurroundingParens name
   | otherwise
   = Nothing
 
