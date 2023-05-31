@@ -34,7 +34,13 @@ import           Outputable                     ( Outputable
                                                 , showSDocUnsafe
                                                 )
 
+#ifdef NO_DAML
+import OccName (HasOccName)
+isDamlGenerated :: HasOccName a => a -> Bool
+isDamlGenerated = const False
+#else
 import RdrHsSyn (isDamlGenerated)
+#endif
 
 moduleOutline
   :: IdeState -> DocumentSymbolParams -> LspM c (Either ResponseError (List DocumentSymbol |? List SymbolInformation))
