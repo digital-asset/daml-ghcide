@@ -28,7 +28,6 @@ import Type
 import Var
 import Packages
 import DynFlags
-import RdrHsSyn (isDamlGenerated)
 #if MIN_GHC_API_VERSION(8,10,0)
 import Predicate (isDictTy)
 import GHC.Platform
@@ -45,6 +44,13 @@ import Development.IDE.GHC.Error
 import Development.IDE.Types.Options
 import Development.IDE.Spans.Common
 import Development.IDE.GHC.Util
+
+#ifdef NO_DAML
+isDamlGenerated :: HasOccName a => a -> Bool
+isDamlGenerated = const False
+#else
+import RdrHsSyn (isDamlGenerated)
+#endif
 
 -- From haskell-ide-engine/hie-plugin-api/Haskell/Ide/Engine/Context.hs
 

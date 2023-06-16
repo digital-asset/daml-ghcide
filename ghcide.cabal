@@ -148,6 +148,13 @@ library
         Development.IDE.Plugin.Completions.Logic
         Development.IDE.Plugin.Completions.Types
     ghc-options: -Wall -Wno-name-shadowing
+    if flag(no_daml)
+        cpp-options: -DNO_DAML
+
+Flag no_daml
+    Description: Build without Daml-capable GHC by enabling -DNO_DAML, so isDamlGenerated is stubbed out
+    Manual: True
+    Default: False
 
 executable ghcide-test-preprocessor
     default-language: Haskell2010
