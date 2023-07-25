@@ -31,7 +31,7 @@ module Development.IDE.Core.Shake(
     shakeProfile,
     use, useWithStale, useNoFile, uses, usesWithStale,
     use_, useNoFile_, uses_,
-    define, defineEarlyCutoff, defineOnDisk, needOnDisk, needOnDisks,
+    define, defineEarlyCutoff, defineEarlyCutoffWithDefaultRunChanged, defineOnDisk, needOnDisk, needOnDisks,
     getDiagnostics, unsafeClearDiagnostics,
     getHiddenDiagnostics,
     IsIdeGlobal, addIdeGlobal, addIdeGlobalExtras, getIdeGlobalState, getIdeGlobalAction,
@@ -567,12 +567,20 @@ withProgress :: (Eq a, Hashable a) => Var (HMap.HashMap a Int) -> a -> Action b 
 withProgress var file = actionBracket (f succ) (const $ f pred) . const
     where f shift = modifyVar_ var $ return . HMap.alter (Just . shift . fromMaybe 0) file
 
-
 defineEarlyCutoff
     :: IdeRule k v
     => (k -> NormalizedFilePath -> Action (Maybe BS.ByteString, IdeResult v))
     -> Rules ()
-defineEarlyCutoff op = addBuiltinRule noLint noIdentity $ \(Q (key, file)) (old :: Maybe BS.ByteString) mode -> do
+defineEarlyCutoff op = 
+  defineEarlyCutoffWithDefaultRunChanged $ \key path -> do
+    (bs, res) <- op key path
+    pure (bs, ChangedRecomputeDiff, res)
+
+defineEarlyCutoffWithDefaultRunChanged
+    :: IdeRule k v
+    => (k -> NormalizedFilePath -> Action (Maybe BS.ByteString, RunChanged, IdeResult v))
+    -> Rules ()
+defineEarlyCutoffWithDefaultRunChanged op = addBuiltinRule noLint noIdentity $ \(Q (key, file)) (old :: Maybe BS.ByteString) mode -> do
     extras@ShakeExtras{state, inProgress} <- getShakeExtras
     -- don't do progress for GetFileExists, as there are lots of non-nodes for just that one key
     (if show key == "GetFileExists" then id else withProgress inProgress file) $ do
@@ -588,9 +596,9 @@ defineEarlyCutoff op = addBuiltinRule noLint noIdentity $ \(Q (key, file)) (old 
         case val of
             Just res -> return res
             Nothing -> do
-                (bs, (diags, res)) <- actionCatch
+                (bs, defRunChanged, (diags, res)) <- actionCatch
                     (do v <- op key file; liftIO $ evaluate $ force v) $
-                    \(e :: SomeException) -> pure (Nothing, ([ideErrorText file $ T.pack $ show e | not $ isBadDependency e],Nothing))
+                    \(e :: SomeException) -> pure (Nothing, ChangedRecomputeDiff, ([ideErrorText file $ T.pack $ show e | not $ isBadDependency e],Nothing))
                 modTime <- liftIO $ (currentValue =<<) <$> getValues state GetModificationTime file
                 (bs, res) <- case res of
                     Nothing -> do
@@ -604,14 +612,15 @@ defineEarlyCutoff op = addBuiltinRule noLint noIdentity $ \(Q (key, file)) (old 
                     Just v -> pure (maybe ShakeNoCutoff ShakeResult bs, Succeeded (vfsVersion =<< modTime) v)
                 liftIO $ setValues state key file res
                 updateFileDiagnostics file (Key key) extras $ map (\(_,y,z) -> (y,z)) diags
-                let eq = case (bs, fmap decodeShakeValue old) of
-                        (ShakeResult a, Just (ShakeResult b)) -> a == b
-                        (ShakeStale a, Just (ShakeStale b)) -> a == b
-                        -- If we do not have a previous result
-                        -- or we got ShakeNoCutoff we always return False.
-                        _ -> False
+                let changed = case (bs, fmap decodeShakeValue old) of
+                        (ShakeResult a, Just (ShakeResult b)) | a == b -> ChangedRecomputeSame
+                        (ShakeStale a, Just (ShakeStale b)) | a == b -> ChangedRecomputeSame
+                        -- If we do not have a previous result, give the default run changed from the action.
+                        (_, Nothing) -> defRunChanged
+                        -- if we got ShakeNoCutoff we always return changed.
+                        _ -> ChangedRecomputeDiff
                 return $ RunResult
-                    (if eq then ChangedRecomputeSame else ChangedRecomputeDiff)
+                    changed
                     (encodeShakeValue bs) $
                     A res bs
 
