@@ -6,7 +6,6 @@
 module Development.IDE.Spans.AtPoint (
     atPoint
   , gotoDefinition
-  , spansAtPoint
   ) where
 
 import           Development.IDE.GHC.Error
@@ -43,7 +42,7 @@ gotoDefinition
   -> IdeOptions
   -> [SpanInfo]
   -> Position
-  -> m (Maybe Location)
+  -> m (Maybe (Location, Maybe Name))
 gotoDefinition getHieFile ideOpts srcSpans pos =
   listToMaybe <$> locationsAtPoint getHieFile ideOpts pos srcSpans
 
@@ -128,15 +127,15 @@ locationsAtPoint
   -> IdeOptions
   -> Position
   -> [SpanInfo]
-  -> m [Location]
+  -> m [(Location, Maybe Name)]
 locationsAtPoint getHieFile _ pos =
-    fmap (map srcSpanToLocation) . mapMaybeM (getSpan . spaninfoSource) . spansAtPoint pos
-  where getSpan :: SpanSource -> m (Maybe SrcSpan)
+    fmap (map (first srcSpanToLocation)) . mapMaybeM (getSpan . spaninfoSource) . spansAtPoint pos
+  where getSpan :: SpanSource -> m (Maybe (SrcSpan, Maybe Name))
         getSpan NoSource = pure Nothing
-        getSpan (SpanS sp) = pure $ Just sp
+        getSpan (SpanS sp) = pure $ Just (sp, Nothing)
         getSpan (Lit _) = pure Nothing
         getSpan (Named name) = case nameSrcSpan name of
-            sp@(RealSrcSpan _) -> pure $ Just sp
+            sp@(RealSrcSpan _) -> pure $ Just (sp, Nothing)
             sp@(UnhelpfulSpan _) -> runMaybeT $ do
                 guard (sp /= wiredInSrcSpan)
                 -- This case usually arises when the definition is in an external package.
@@ -149,7 +148,8 @@ locationsAtPoint getHieFile _ pos =
                 -- This file might no longer exists and even if it does the path will be relative
                 -- to the compilation directory which we don’t know.
                 let span = setFileName srcPath $ nameSrcSpan $ availName avail
-                pure span
+                -- We provide the name for the unhelpful span case, so that an alternative method to get location from name can be used.
+                pure (span, Just name)
         -- We ignore uniques and source spans and only compare the name and the module.
         eqName :: Name -> Name -> Bool
         eqName n n' = nameOccName n == nameOccName n' && nameModule_maybe n == nameModule_maybe n'

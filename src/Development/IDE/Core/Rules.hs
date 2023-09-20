@@ -19,6 +19,7 @@ module Development.IDE.Core.Rules(
     mainRule,
     getAtPoint,
     getDefinition,
+    getDefinitionWithName,
     getDependencies,
     getParsedModule,
     generateCore,
@@ -109,7 +110,10 @@ getAtPoint file pos = fmap join $ runMaybeT $ do
 
 -- | Goto Definition.
 getDefinition :: NormalizedFilePath -> Position -> Action (Maybe Location)
-getDefinition file pos = fmap join $ runMaybeT $ do
+getDefinition file pos = fmap fst <$> getDefinitionWithName file pos
+
+getDefinitionWithName :: NormalizedFilePath -> Position -> Action (Maybe (Location, Maybe Name))
+getDefinitionWithName file pos = fmap join $ runMaybeT $ do
     opts <- lift getIdeOptions
     (spans, mapping) <- useE GetSpanInfo file
     !pos' <- MaybeT (return $ fromCurrentPosition mapping pos)
