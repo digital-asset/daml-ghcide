@@ -34,6 +34,7 @@ import Control.Monad.IO.Class
 import           Data.Maybe
 import           Data.List
 import qualified Data.Text as T
+import           Data.Bifunctor (first)
 
 -- | Locate the definition of the name at a given position.
 gotoDefinition
