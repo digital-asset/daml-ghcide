@@ -6,6 +6,7 @@
 module Development.IDE.Spans.AtPoint (
     atPoint
   , gotoDefinition
+  , spansAtPoint
   ) where
 
 import           Development.IDE.GHC.Error
