@@ -6,6 +6,7 @@
 module Development.IDE.Plugin
     ( Plugin(..)
     , PluginCommand(..)
+    , PluginHandlers
     , pluginHandler
     , pluginNotificationHandler
     , commandsHandler
