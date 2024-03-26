@@ -121,6 +121,8 @@ atPoint IdeOptions{..} (SpansInfo srcSpans cntsSpans) pos = do
         Just name -> any (`isInfixOf` getOccString name) ["==", "showsPrec"]
         Nothing -> False
 
+-- | Given a position, gets the locations of all Spans that overlap with it.
+-- For unhelpful spans containing only an identifier, the Name is returned as well, for lookup in other ghc-ide instances
 locationsAtPoint
   :: forall m
    . MonadIO m
