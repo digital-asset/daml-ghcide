@@ -126,6 +126,7 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
             waitBarrier clientMsgBarrier
             putStr "exit barrier yielded" >> hFlush stdout
         ]
+    putStr "STOP" >> hFlush stdout
     where
         handleInit
           :: IO () -> (SomeLspId -> IO ()) -> (SomeLspId -> IO ()) -> Chan ReactorMessage
