@@ -117,7 +117,7 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
             , LSP.defaultConfig = defaultConfig
             }
 
-    void $ waitAnyCancel =<< traverse async
+    asyncs <- traverse async
         [ void $ LSP.runServerWithHandles
             stdin
             newStdout
@@ -126,7 +126,11 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
             waitBarrier clientMsgBarrier
             putStr "exit barrier yielded" >> hFlush stdout
         ]
-    putStr "STOP" >> hFlush stdout
+    putStr "MADE THREADS" >> hFlush stdout
+    void $ waitAny asyncs
+    putStr "FINISHED WAITING" >> hFlush stdout
+    cancelMany asyncs
+    putStr "CANCELLED" >> hFlush stdout
     where
         handleInit
           :: IO () -> (SomeLspId -> IO ()) -> (SomeLspId -> IO ()) -> Chan ReactorMessage
