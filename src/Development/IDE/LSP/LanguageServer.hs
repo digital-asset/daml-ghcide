@@ -64,7 +64,10 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
     -- dies and can be restarted instead of losing threads silently.
     clientMsgBarrier <- newBarrier
     -- Forcefully exit
-    let exit = signalBarrier clientMsgBarrier ()
+    let exit = do
+          putStr "signalling exit" >> hFlush stdout
+          signalBarrier clientMsgBarrier ()
+          putStr "signalled exit" >> hFlush stdout
 
     -- The set of requests ids that we have received but not finished processing
     pendingRequests <- newTVarIO Set.empty
@@ -119,7 +122,9 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
             stdin
             newStdout
             serverDefinition
-        , void $ waitBarrier clientMsgBarrier
+        , void $ do
+            waitBarrier clientMsgBarrier
+            putStr "exit barrier yielded" >> hFlush stdout
         ]
     where
         handleInit
