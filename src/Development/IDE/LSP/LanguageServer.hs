@@ -126,13 +126,13 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
             waitBarrier clientMsgBarrier
             putStr "exit barrier yielded" >> hFlush stdout
         ]
-    putStr "MADE THREADS" >> hFlush stdout
+    putStrLn ("MADE THREADS: " <> show (asyncThreadId <$> asyncs)) >> hFlush stdout
     void $ waitAny asyncs
-    putStr "FINISHED WAITING" >> hFlush stdout
+    putStrLn "FINISHED WAITING" >> hFlush stdout
     cancel $ asyncs !! 1
-    putStr "CANCELLED2" >> hFlush stdout
+    putStrLn "CANCELLED2" >> hFlush stdout
     uninterruptibleCancel $ head asyncs
-    putStr "CANCELLED1" >> hFlush stdout
+    putStrLn "CANCELLED1" >> hFlush stdout
     where
         handleInit
           :: IO () -> (SomeLspId -> IO ()) -> (SomeLspId -> IO ()) -> Chan ReactorMessage
