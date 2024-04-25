@@ -53,6 +53,8 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
     hSetBuffering stderr NoBuffering
     hSetBuffering stdout NoBuffering
 
+    newStdin <- hDuplicate stdin
+
     -- Print out a single space to assert that the above redirection works.
     -- This is interleaved with the logger, hence we just print a space here in
     -- order not to mess up the output too much. Verified that this breaks
@@ -119,7 +121,7 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
 
     asyncs <- traverse async
         [ void $ LSP.runServerWithHandles
-            stdin
+            newStdin
             newStdout
             serverDefinition
         , void $ do
@@ -131,7 +133,8 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
     putStrLn "FINISHED WAITING" >> hFlush stdout
     cancel $ asyncs !! 1
     putStrLn "CANCELLED2" >> hFlush stdout
-    uninterruptibleCancel $ head asyncs
+    hClose newStdin
+    cancel $ head asyncs
     putStrLn "CANCELLED1" >> hFlush stdout
     where
         handleInit
