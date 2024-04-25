@@ -129,8 +129,10 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
     putStr "MADE THREADS" >> hFlush stdout
     void $ waitAny asyncs
     putStr "FINISHED WAITING" >> hFlush stdout
-    cancelMany asyncs
-    putStr "CANCELLED" >> hFlush stdout
+    cancel $ asyncs !! 1
+    putStr "CANCELLED2" >> hFlush stdout
+    cancel $ head asyncs
+    putStr "CANCELLED1" >> hFlush stdout
     where
         handleInit
           :: IO () -> (SomeLspId -> IO ()) -> (SomeLspId -> IO ()) -> Chan ReactorMessage
