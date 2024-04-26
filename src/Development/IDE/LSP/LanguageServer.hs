@@ -134,7 +134,7 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
     cancel $ asyncs !! 1
     putStrLn "CANCELLED2" >> hFlush stdout
     -- hClose newStdin
-    throwTo (asyncThreadId $ head asyncs) AsyncCancelled
+    Control.Concurrent.Extra.throwTo (asyncThreadId $ head asyncs) AsyncCancelled
     putStrLn "THROWN" >> hFlush stdout
     waitCatch $ head asyncs
     putStrLn "CANCELLED1" >> hFlush stdout
