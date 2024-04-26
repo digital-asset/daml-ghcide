@@ -133,8 +133,10 @@ runLanguageServer options defaultConfig onConfigurationChange userHandlers getId
     putStrLn "FINISHED WAITING" >> hFlush stdout
     cancel $ asyncs !! 1
     putStrLn "CANCELLED2" >> hFlush stdout
-    hClose newStdin
-    cancel $ head asyncs
+    -- hClose newStdin
+    throwTo (asyncThreadId $ head asyncs) AsyncCancelled
+    putStrLn "THROWN" >> hFlush stdout
+    waitCatch $ head asyncs
     putStrLn "CANCELLED1" >> hFlush stdout
     where
         handleInit
