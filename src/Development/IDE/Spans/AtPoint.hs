@@ -73,7 +73,7 @@ atPoint IdeOptions{..} (SpansInfo srcSpans cntsSpans) pos = do
      where
        mbName = getNameM spaninfoSource
        expr = case spaninfoSource of
-                Named n -> qualifyNameIfPossible n
+                Named n -> qualifyNameIfPossible $ removeNameWorkerPrefix n
                 Lit   l -> crop $ T.pack l
                 _       -> ""
        nameOrSource   = [expr <> "\n" <> typeAnnotation]
@@ -146,18 +146,31 @@ locationsAtPoint getHieFile _ pos =
                 -- so we instead read the .hie files to get useful source spans.
                 mod <- MaybeT $ return $ nameModule_maybe name
                 (hieFile, srcPath) <- MaybeT $ getHieFile mod
-                avail <- MaybeT $ pure $ listToMaybe (filterAvails (eqName name) $ hie_exports hieFile)
+                let unWorkeredName = removeNameWorkerPrefix name
+                avail <- MaybeT $ pure $ listToMaybe (filterAvails (eqName unWorkeredName) $ hie_exports hieFile)
                 -- The location will point to the source file used during compilation.
                 -- This file might no longer exists and even if it does the path will be relative
                 -- to the compilation directory which we don’t know.
                 let span = setFileName srcPath $ nameSrcSpan $ availName avail
                 -- We provide the name for the unhelpful span case, so that an alternative method to get location from name can be used.
-                pure (span, Just name)
+                pure (span, Just unWorkeredName)
         -- We ignore uniques and source spans and only compare the name and the module.
         eqName :: Name -> Name -> Bool
         eqName n n' = nameOccName n == nameOccName n' && nameModule_maybe n == nameModule_maybe n'
         setFileName f (RealSrcSpan span) = RealSrcSpan (span { srcSpanFile = mkFastString f })
         setFileName _ span@(UnhelpfulSpan _) = span
+
+-- For record construction syntax, a worker name of the form $W<name> is used, which is a variable
+-- we should instead be giving back the data type, i.e. remove the $W, and change the NameSpace to DataName
+-- Else finding these definitions or giving hover data is wrong
+removeNameWorkerPrefix :: Name -> Name
+removeNameWorkerPrefix name = fromMaybe name $ do
+  strippedNameString <- stripPrefix "$W" $ occNameString $ nameOccName name
+  pure $ mkExternalName
+    (nameUnique name)
+    (nameModule name)
+    (mkOccName dataName strippedNameString)
+    (nameSrcSpan name)
 
 -- | Filter out spans which do not enclose a given point
 spansAtPoint :: Position -> [SpanInfo] -> [SpanInfo]
