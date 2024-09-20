@@ -57,7 +57,7 @@ import qualified Data.ByteString.Char8 as BS
 import           Data.Dynamic
 import           Data.Maybe
 import Data.Map.Strict (Map)
-import           Data.List.Extra (foldl', partition, takeEnd)
+import           Data.List.Extra (foldl', groupOnKey, partition, takeEnd)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Traversable (for)
@@ -611,7 +611,8 @@ defineEarlyCutoffWithDefaultRunChanged op = addBuiltinRule noLint noIdentity $ \
                                 Failed -> (toShakeValue ShakeResult bs, Failed)
                     Just v -> pure (maybe ShakeNoCutoff ShakeResult bs, Succeeded (vfsVersion =<< modTime) v)
                 liftIO $ setValues state key file res
-                updateFileDiagnostics file (Key key) extras $ map (\(_,y,z) -> (y,z)) diags
+                forM_ (groupOnKey fst3 diags) $ \(file, diags) ->
+                  updateFileDiagnostics file (Key key) extras $ map (\(_,y,z) -> (y,z)) diags
                 let changed = case (bs, fmap decodeShakeValue old) of
                         (ShakeResult a, Just (ShakeResult b)) | a == b -> ChangedRecomputeSame
                         (ShakeStale a, Just (ShakeStale b)) | a == b -> ChangedRecomputeSame
