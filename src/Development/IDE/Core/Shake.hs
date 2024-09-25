@@ -44,7 +44,8 @@ module Development.IDE.Core.Shake(
     updatePositionMapping,
     deleteValue,
     OnDiskRule(..),
-    Config(..)
+    Config(..),
+    updateFileDiagnostics
     ) where
 
 import           Development.Shake hiding (ShakeValue, doesFileExist)
@@ -611,7 +612,7 @@ defineEarlyCutoffWithDefaultRunChanged op = addBuiltinRule noLint noIdentity $ \
                                 Failed -> (toShakeValue ShakeResult bs, Failed)
                     Just v -> pure (maybe ShakeNoCutoff ShakeResult bs, Succeeded (vfsVersion =<< modTime) v)
                 liftIO $ setValues state key file res
-                updateFileDiagnostics file (Key key) extras $ map (\(_,y,z) -> (y,z)) diags
+                updateFileDiagnostics file key extras $ map (\(_,y,z) -> (y,z)) diags
                 let changed = case (bs, fmap decodeShakeValue old) of
                         (ShakeResult a, Just (ShakeResult b)) | a == b -> ChangedRecomputeSame
                         (ShakeStale a, Just (ShakeStale b)) | a == b -> ChangedRecomputeSame
@@ -673,7 +674,7 @@ defineOnDisk act = addBuiltinRule noLint noIdentity $
       case mbOld of
           Nothing -> do
               (diags, mbHash) <- runAct
-              updateFileDiagnostics file (Key key) extras $ map (\(_,y,z) -> (y,z)) diags
+              updateFileDiagnostics file key extras $ map (\(_,y,z) -> (y,z)) diags
               pure $ RunResult ChangedRecomputeDiff (fromMaybe "" mbHash) (isJust mbHash)
           Just old -> do
               current <- validateHash <$> (actionCatch getHash $ \(_ :: SomeException) -> pure "")
@@ -684,7 +685,7 @@ defineOnDisk act = addBuiltinRule noLint noIdentity $
                     pure $ RunResult ChangedNothing (fromMaybe "" current) (isJust current)
                   else do
                     (diags, mbHash) <- runAct
-                    updateFileDiagnostics file (Key key) extras $ map (\(_,y,z) -> (y,z)) diags
+                    updateFileDiagnostics file key extras $ map (\(_,y,z) -> (y,z)) diags
                     let change
                           | mbHash == Just old = ChangedRecomputeSame
                           | otherwise = ChangedRecomputeDiff
@@ -729,10 +730,10 @@ decodeShakeValue bs = case BS.uncons bs of
       | x == 's' -> ShakeStale xs
       | otherwise -> error $ "Failed to parse shake value " <> show bs
 
-
 updateFileDiagnostics ::
-     NormalizedFilePath
-  -> Key
+     (Typeable k, Hashable k, Eq k, Show k)
+  => NormalizedFilePath
+  -> k
   -> ShakeExtras
   -> [(ShowDiagnostic,Diagnostic)] -- ^ current results
   -> Action ()
@@ -747,14 +748,14 @@ updateFileDiagnostics fp k ShakeExtras{diagnostics, hiddenDiagnostics, published
         -- publishDiagnosticsNotification.
         newDiags <- modifyVar diagnostics $ \old -> do
             let newDiagsStore = setStageDiagnostics fp (vfsVersion =<< modTime)
-                                  (T.pack $ show k) (map snd currentShown) old
+                                  (T.pack $ show $ Key k) (map snd currentShown) old
             let newDiags = getFileDiagnostics fp newDiagsStore
             _ <- evaluate newDiagsStore
             _ <- evaluate newDiags
             pure (newDiagsStore, newDiags)
         modifyVar_ hiddenDiagnostics $ \old -> do
             let newDiagsStore = setStageDiagnostics fp (vfsVersion =<< modTime)
-                                  (T.pack $ show k) (map snd currentHidden) old
+                                  (T.pack $ show $ Key k) (map snd currentHidden) old
             let newDiags = getFileDiagnostics fp newDiagsStore
             _ <- evaluate newDiagsStore
             _ <- evaluate newDiags
