@@ -105,19 +105,24 @@ documentSymbolForDecl (L l (TyClD ClassDecl { tcdLName = L _ name, tcdSigs, tcdT
         , L l' n                            <- names
         ]
     }
-documentSymbolForDecl (L l (TyClD DataDecl { tcdLName = L _ name, tcdDataDefn = HsDataDefn { dd_cons } }))
-  = Just (defDocumentSymbol l :: DocumentSymbol)
+documentSymbolForDecl (L declL (TyClD DataDecl { tcdLName = L _ name, tcdDataDefn = HsDataDefn { dd_cons } }))
+  = Just (defDocumentSymbol declL :: DocumentSymbol)
     { _name     = showRdrName name
     , _kind     = SkStruct
     , _children =
       Just $ List
-        [ (defDocumentSymbol l :: DocumentSymbol)
+        [ (defDocumentSymbol conL :: DocumentSymbol)
             { _name           = showRdrName n
             , _kind           = SkConstructor
-            , _selectionRange = srcSpanToRange l'
+            , _selectionRange = srcSpanToRange conNameL
+            , _range = srcSpanToRange $ case conL of
+                -- Interfaces have a dd_con source range of UnhelpfulSpan
+                -- we detect this and replace it with declL
+                UnhelpfulSpan _ -> declL
+                RealSrcSpan _ -> conL
             }
-        | L l  x <- dd_cons
-        , L l' n <- getConNames x
+        | L conL  x <- dd_cons
+        , L conNameL n <- getConNames x
         ]
     }
 documentSymbolForDecl (L l (TyClD SynDecl { tcdLName = L l' n })) = Just
